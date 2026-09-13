@@ -29,6 +29,20 @@ On runtimes that expose Story Card Notes to scripts, the settings and explanatio
 Edit only the value after `=`. The card controls the master switch, strict knowledge boundaries, automatic NPC detection, narrative recall, abstention, the Current State Ledger, memory depth, recall size, active-character count, output spacing, and debug mode. If the card cannot be created at all, the memory engine keeps running on safe defaults instead of breaking the Adventure.
 
 
+## 🔄 Drop-In Existing Adventure Activation
+
+EIDETIC does **not** require a brand-new Adventure. If the script is added or updated on a Scenario that already has an Adventure in progress, the next player action or Continue triggers initialization automatically.
+
+On that first hook EIDETIC:
+
+- creates or repairs its Config & Guide card
+- scans existing Character Story Cards
+- imports the most recent history AI Dungeon exposes to scripts
+- caps the import to keep first-run work safe
+- starts normal memory tracking immediately
+
+No setup command, restart, or manual character list is required. History older than the API exposes cannot be reconstructed automatically, but everything available during installation is backfilled and all future turns are tracked normally.
+
 ## 🧩 Deep Episodic Memory
 
 EIDETIC records story events as long-term episodic memories rather than relying entirely on recent context.

@@ -4,6 +4,10 @@ const EIDETIC_CONFIG = {
   AUTO_CONFIG_CARD: true,
   CONFIG_CARD_KEY: "%__EIDETIC_CFG_A9F3C1__%",
   OUTPUT_SPACING: "auto",
+  BOOTSTRAP_EXISTING_HISTORY: true,
+  BOOTSTRAP_HISTORY_ACTIONS: 240,
+  BOOTSTRAP_HISTORY_CHARS: 120000,
+  BOOTSTRAP_ACTION_CHARS: 6000,
 
   SEED_CHARACTERS: [],
   ALWAYS_FOCUS: [],
@@ -72,6 +76,7 @@ const EIDETIC = (() => {
   const PLAYER = "@player";
   let ROOT_CACHE_STATE = null;
   let ROOT_CACHE_VALUE = null;
+  let TURN_OVERRIDE = null;
   let ALIAS_CACHE_SIG = "";
   let ALIAS_CACHE = null;
   const IDENTITY_ABSOLUTE = new Set(["i","me","my","mine","myself","you","your","yours","yourself","he","him","his","himself","she","her","hers","herself","it","its","itself","we","us","our","ours","ourselves","they","them","their","theirs","themselves","eidetic"]);
@@ -5260,7 +5265,7 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "" },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
       stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
@@ -5291,6 +5296,9 @@ const EIDETIC = (() => {
     if (typeof r.runtime.configProbePending !== "boolean") r.runtime.configProbePending = false;
     if (typeof r.runtime.configCardWarned !== "boolean") r.runtime.configCardWarned = false;
     if (!(typeof r.runtime.configCardId === "number" || typeof r.runtime.configCardId === "string")) r.runtime.configCardId = "";
+    if (typeof r.runtime.bootstrapDone !== "boolean") r.runtime.bootstrapDone = !!((r.hot && r.hot.length) || (r.cold && r.cold.length) || (r.anchors && r.anchors.length) || (r.ledger && r.ledger.length));
+    if (!Number.isFinite(r.runtime.bootstrapImported)) r.runtime.bootstrapImported = 0;
+    if (typeof r.runtime.activationAnnounced !== "boolean") r.runtime.activationAnnounced = !!r.runtime.bootstrapDone;
     if (!r.stats || typeof r.stats !== "object") r.stats = {};
     if (!r.last || typeof r.last !== "object") r.last = {};
     if (!Number.isFinite(r.last.inputTurn)) r.last.inputTurn = -1;
@@ -5320,6 +5328,7 @@ const EIDETIC = (() => {
   }
 
   function currentTurn() {
+    if (Number.isFinite(TURN_OVERRIDE)) return Math.max(0, TURN_OVERRIDE);
     if (typeof info !== "undefined" && info && Number.isFinite(info.actionCount)) return Math.max(0, info.actionCount);
     const r = root();
     return r && r.last && Number.isFinite(r.last.turn) ? r.last.turn : 0;
@@ -7030,6 +7039,75 @@ const EIDETIC = (() => {
     return out.slice(0, EIDETIC_CONFIG.MAX_CARD_SEEDS);
   }
 
+
+  function historyActionKind(item) {
+    const t = safeText(item && item.type).toLowerCase();
+    if (/^(do|say|story|see)$/.test(t)) return "input";
+    return "output";
+  }
+
+  function bootstrapExistingHistory() {
+    const r = root();
+    if (!r || !EIDETIC_CONFIG.ENABLED || r.runtime.bootstrapDone || !EIDETIC_CONFIG.BOOTSTRAP_EXISTING_HISTORY) return 0;
+    if (typeof history === "undefined" || !Array.isArray(history)) return 0;
+
+    const maxActions = Math.max(0, Number(EIDETIC_CONFIG.BOOTSTRAP_HISTORY_ACTIONS) || 0);
+    const maxChars = Math.max(0, Number(EIDETIC_CONFIG.BOOTSTRAP_HISTORY_CHARS) || 0);
+    const picked = [];
+    let chars = 0;
+    for (let i = history.length - 1; i >= 0 && picked.length < maxActions; i--) {
+      const item = history[i] || {};
+      let txt = cleanText(safeText(item.text != null ? item.text : item.rawText));
+      if (!txt) continue;
+      const perAction = Math.max(500, Number(EIDETIC_CONFIG.BOOTSTRAP_ACTION_CHARS) || 6000);
+      if (txt.length > perAction) {
+        const half = Math.floor((perAction - 5) / 2);
+        txt = txt.slice(0, half) + " … " + txt.slice(-half);
+      }
+      if (maxChars && chars + txt.length > maxChars) {
+        if (picked.length) break;
+        txt = txt.slice(-maxChars);
+      }
+      picked.unshift({ item: item, text: txt, index: i });
+      chars += txt.length;
+    }
+
+    const endTurn = currentTurn();
+    const baseTurn = Math.max(0, endTurn - picked.length);
+    let imported = 0;
+    const previousOverride = TURN_OVERRIDE;
+    try {
+      for (let i = 0; i < picked.length; i++) {
+        TURN_OVERRIDE = baseTurn + i;
+        ingest(picked[i].text, historyActionKind(picked[i].item));
+        imported++;
+      }
+    } finally {
+      TURN_OVERRIDE = previousOverride;
+    }
+    r.runtime.bootstrapDone = true;
+    r.runtime.bootstrapImported = imported;
+    r.runtime.recallCacheKey = "";
+    r.runtime.recallCacheBlock = "";
+    r.runtime.recallPayloadSig = "";
+    return imported;
+  }
+
+  function announceActivation(imported) {
+    const r = root();
+    if (!r || r.runtime.activationAnnounced || !EIDETIC_CONFIG.ENABLED) return;
+    r.runtime.activationAnnounced = true;
+    const existing = Number(imported) > 0 || currentTurn() > 1;
+    const msg = existing
+      ? "EIDETIC active — existing Adventure detected; imported " + (Number(imported) || 0) + " recent exposed actions and will remember new turns automatically."
+      : "EIDETIC active — memory tracking is automatic. No command is required.";
+    if (typeof state !== "undefined" && state && safeText(state.message).trim()) {
+      if (typeof log === "function") log("EIDETIC: " + msg);
+      return;
+    }
+    setMessage(msg);
+  }
+
   function buildQuery(extraText) {
     const focus = cleanText(extraText || "");
     if (focus) {
@@ -7283,7 +7361,7 @@ const EIDETIC = (() => {
 
     if (cmd === "eidetic" || cmd === "memory") {
       const chars = Object.keys(r.chars).length;
-      setMessage("EIDETIC • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • " + r.ledger.length + " current-state facts • turn " + currentTurn());
+      setMessage("EIDETIC • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • " + r.ledger.length + " current-state facts • existing-history import " + Number(r.runtime.bootstrapImported || 0) + " actions • turn " + currentTurn());
       return { text: null, stop: true };
     }
 
@@ -7398,6 +7476,8 @@ const EIDETIC = (() => {
     seedConfiguredCharacters();
     applyConfigCard();
     seedFromStoryCards();
+    const imported = bootstrapExistingHistory();
+    announceActivation(imported);
     rollbackFuture(currentTurn());
     purgeDanglingRetryOutput();
     if (typeof info !== "undefined" && info && Number.isFinite(info.maxChars)) r.runtime.lastMaxChars = info.maxChars;
