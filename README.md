@@ -1,84 +1,170 @@
-# EIDETIC — Total Recall Engine
+# 🧠 EIDETIC — Total Recall Engine
 
-**Persistent, character-scoped long-term memory for AI Dungeon.**
+> **Persistent, character-scoped long-term memory for AI Dungeon.**  
+> Characters remember what happened, who actually knew it, what was only suspected, and what changed later—even after the original scene has fallen far outside normal context.
 
-EIDETIC is designed for long adventures where recurring characters should continue to remember events after those events have fallen out of the model's normal context window.
+---
 
-It does not literally enlarge the language model's hard context limit. Instead, it separates **storage** from **active context**: old events live in persistent script `state`, while a small retrieval packet containing only the most relevant memories is supplied to the model when needed.
+## ✨ Memory That Actually Matters
 
-## What the hardened build changes
+EIDETIC is built around a simple idea: **a recurring character should not reset just because the story moved on.**
 
-The first build proved that a large persistent archive and selective retrieval could work. This hardened build focuses on memory **correctness**, not merely capacity.
+Instead of trying to force an entire adventure into active context, EIDETIC keeps a deep persistent memory archive and retrieves only the memories that matter to the current scene.
 
-### Witnesses are not subjects
+Old promises can return.  
+Private conversations can matter hundreds of turns later.  
+A character can remember where they used to live without confusing it with where they live now.  
+A suspicion can remain a suspicion instead of slowly becoming “fact.”
 
-Mentioning a character no longer makes that character a witness.
+The result is continuity that feels **personal, selective, historical, and character-specific**.
 
-If you tell Alice, "Bob betrayed me," Alice can remember that conversation. Bob is stored as the **subject** of the memory, but does not receive it as private knowledge unless he was actually present.
+---
 
-Scene presence is alias-aware, so `Alice`, `Alice Mercer`, and other known aliases resolve to the same person. Movement and scene-transition language clears stale participants more aggressively.
+## 🧩 Deep Episodic Memory
 
-### Epistemic memory
+EIDETIC records story events as long-term episodic memories rather than relying entirely on recent context.
 
-Archived memories now preserve what kind of information they contain:
+### 🔥 Hot Memory
+Recent events are retained in richer detail for immediate continuity.
 
-- `EVENT` — presented as an event in the story
-- `SAID/CLAIMED` — dialogue, testimony, or a claim
-- `BELIEVED/SUSPECTED` — a thought, suspicion, assumption, or belief
-- `UNCERTAIN` — rumour, possibility, or explicitly uncertain information
-- `QUESTION/UNRESOLVED` — a question rather than a fact
+### ❄️ Cold Memory
+Older events are compacted into a much larger long-term archive instead of simply disappearing.
 
-This prevents a line such as "Alice suspects Daniel killed Mark" from silently turning into the objective fact "Daniel killed Mark" during later recall.
+### 📌 Durable Anchors
+High-value facts such as promises, secrets, deaths, relationships, identities, important possessions, major injuries, discoveries, and other lasting events can survive independently of ordinary episodic memory.
 
-Automatic durable anchors are deliberately conservative: beliefs, questions, and uncertain statements do not become permanent factual anchors simply because they contain dramatic words.
+### 🗃️ Massive Recall Depth
+The default architecture supports:
 
-### Recall can abstain
-
-When a player explicitly asks a character to remember something and no matching archived evidence exists, EIDETIC can tell the model that no verified matching memory was found and that it must not invent one.
-
-That is a major difference between "memory" and ordinary roleplay continuation: sometimes the correct answer is that the character does not remember or never knew.
-
-### Retry and branch safety
-
-Discarded AI retries are reconciled **before** the next generation when the discarded output is no longer present in History. A replacement player action on the same turn also invalidates the old same-turn model output immediately.
-
-Undo still removes records from turns that no longer exist.
-
-The result is transactional story memory: rejected realities should not remain in the character's head and bias the retry.
-
-### Upgrade-safe state migration
-
-Upgrading the script no longer destroys the archive just because the internal script version changed.
-
-Old EIDETIC state is migrated in place. Existing hot memories, cold memories, anchors, characters, manual focus, and other safe fields are retained while missing schema fields are added.
-
-### Compact cold archive
-
-Recent memories remain detailed. Older memories are converted into a compact tuple representation rather than large repeated JavaScript objects.
-
-Default capacity remains:
-
-- **4,500 hot episodic records**
-- **9,000 cold episodic records**
+- **4,500 detailed hot memories**
+- **9,000 compact cold memories**
 - **1,200 durable anchors**
 
-The compact representation materially reduces serialized state size while keeping old v1-style object records readable during migration.
+The archive stays outside the active prompt until something becomes relevant again.
 
-### Bounded retrieval work
+---
 
-The retrieval scanner no longer builds arbitrarily large temporary arrays of every matching record. It keeps a bounded candidate pool while scanning the archive.
+## 👁️ Character-Scoped Knowledge
 
-This matters because AI Dungeon scripts run in a memory-limited sandbox. A retrieval engine should optimize both persistent state and temporary allocations.
+EIDETIC tracks **who actually had access to information**, not merely whose name appeared in a sentence.
 
-### Better relevance
+If you tell Alice:
 
-Importance and relevance are now treated separately.
+> “Bob betrayed me.”
 
-A dramatic old memory is not automatically considered relevant to every recall question. Explicit recall requests require topical evidence rather than allowing raw importance alone to dominate ranking.
+Alice can remember the conversation.
 
-Known character-name tokens are separated from topical query tokens so simply saying `Alice` does not make every Alice memory equally relevant.
+Bob does **not** automatically gain that memory just because he was the subject.
 
-The lightweight search index also adds semantic tags such as:
+This lets the story preserve:
+
+- private conversations
+- secrets
+- withheld information
+- misunderstandings
+- hidden motives
+- one-sided discoveries
+- different versions of the same event
+
+Characters can finally have **different knowledge of the same world**.
+
+---
+
+## 🧠 Epistemic Memory
+
+Not every sentence is a fact.
+
+EIDETIC preserves the difference between:
+
+- **EVENT** — something presented as happening
+- **SAID / CLAIMED** — something somebody stated
+- **BELIEVED / SUSPECTED** — an assumption, belief, theory, or suspicion
+- **UNCERTAIN** — rumour, possibility, or incomplete information
+- **QUESTION / UNRESOLVED** — something still unanswered
+
+So:
+
+> *Alice suspects Daniel killed Mark.*
+
+does not silently become:
+
+> *Daniel killed Mark.*
+
+Memory retains **how the character knew something**, not just the words around it.
+
+---
+
+## 🚫 Recall Without Hallucinated History
+
+When a character is explicitly asked to remember something and the archive contains no supporting memory, EIDETIC can tell the model that **no verified matching memory was found**.
+
+The correct result can therefore be:
+
+- they do not remember
+- they were never told
+- they were not present
+- the event never happened
+- the answer is uncertain
+
+Long-term memory becomes evidence-based rather than an invitation for the model to invent a convenient past.
+
+---
+
+## ⏳ Time-Aware Recall
+
+EIDETIC understands that memory has chronology.
+
+Queries involving ideas such as:
+
+- first
+- earliest
+- originally
+- previous
+- last
+- latest
+- newest
+- current
+- now
+- still
+
+can change retrieval order.
+
+A character can therefore distinguish:
+
+**what used to be true**  
+from  
+**what is true now**.
+
+That matters for changing homes, relationships, jobs, injuries, allegiances, possessions, secrets, beliefs, identities, and long-running character arcs.
+
+---
+
+## 🎯 Relevance-Driven Retrieval
+
+Important memories are not automatically relevant memories.
+
+EIDETIC ranks recall using a combination of:
+
+- meaningful topic overlap
+- involved characters
+- memory ownership
+- semantic tags
+- importance
+- chronology
+- explicit recall language
+- manual anchors
+- current scene presence
+- active character focus
+
+A dramatic death from 800 turns ago should not appear every time someone asks about a key.
+
+A quiet promise from 1,500 turns ago **should** return when that promise matters again.
+
+---
+
+## 🏷️ Semantic Memory Tags
+
+EIDETIC builds a lightweight local index around useful concepts such as:
 
 - `@location`
 - `@time`
@@ -90,197 +176,225 @@ The lightweight search index also adds semantic tags such as:
 - `@item`
 - `@role`
 
-These are deliberately deterministic and local; EIDETIC does not require an external embedding service.
+This strengthens retrieval without requiring an external embedding service or another AI model.
 
-### Time-aware recall
+---
 
-Queries such as "first time", "earliest", "originally", "last time", "latest", and "most recent" influence retrieval order.
+## 🛡️ Detection Fortress
 
-This helps distinguish historical facts from current or most-recent state rather than treating every matching event as timeless.
+EIDETIC includes a dedicated anti-junk character detection layer designed to stop ordinary capitalized nouns from becoming fake NPCs.
 
-### Adaptive context budget
+It evaluates **person evidence**, not capitalization alone.
 
-EIDETIC reads the `info.maxChars` and `info.memoryLength` values available to the model-context hook and scales its recall block instead of blindly consuming a fixed 3,200 characters on every model/context size.
+### ✅ Strong Character Evidence
+Signals such as:
 
-The default target is at most **12% of the observed character budget**, capped by `RECALL_BLOCK_MAX_CHARS`. On very small contexts the control header becomes compact as well, so the block still respects the calculated hard cap.
+- dialogue attribution
+- direct address
+- introductions
+- relationships
+- kinship
+- titles
+- human actions
+- human possessive context
+- Character Story Cards
+- repeated independent person-like evidence
 
-This protects recent story history and other required context components from being unnecessarily displaced by the memory engine itself.
+can strengthen an identity.
 
-### Cache-visible revision handling
+### ❌ Strong Non-Character Evidence
+Locations, rooms, facilities, vehicles, items, organizations, departments, systems, events, headings, calendar terms, UI words, and narrative vocabulary receive negative evidence.
 
-Every recall packet has a monotonically increasing revision number. When the payload changes, the newest block explicitly states that it is authoritative and older EIDETIC revisions must be ignored.
+The detector contains thousands of explicit non-person patterns and vocabulary entries built specifically to resist junk promotion.
 
-This is useful for append-only/cache-efficient context paths where an older appended block may remain physically visible.
+### 🌹 Ambiguous Names Still Work
+Names such as:
 
-### Player identity protection
+- Rose
+- Hope
+- Raven
+- Summer
+- Hunter
+- Monday
 
-The engine uses scenario placeholders and available `info.characterNames` data to prevent the player character's own name from accidentally being promoted into a separate NPC brain.
+are not blindly blocked.
 
-### Ambiguous names
+They simply need convincing human evidence before becoming persistent characters.
 
-A single first name can merge with its full form while unambiguous, but two different people such as `John Smith` and `John Doe` are kept separate. Once a first name becomes ambiguous, bare `John` is intentionally not resolved to one of them by guesswork.
+That means **Rose says, “Come with me.”** can create a real character.
 
-### Detection Fortress — anti-junk character discovery
+Repeated document headings containing **Rose** cannot.
 
-Version 4 adds a dedicated **5,000+ line detection hardening pass** to the Library. More than **3,600 explicit proper-looking non-person phrases** are used by the detector, alongside hard/soft vocabulary classes, entity-head classification, titles, kinship words, human-context signals, and scored evidence rules.
+---
 
-The detector does **not** simply ban common words. It separates evidence strength:
+## 🎭 Identity & Alias Intelligence
 
-- Character Story Cards and creator-configured characters are trusted identities.
-- Dialogue attribution, direct address, introductions, relationships, titles, and human possessive context are strong person evidence.
-- Generic capitalization is weak evidence and normally needs repeated independent turns.
-- Locations, rooms, vehicles, items, organizations, departments, events, systems, calendar words, headings, UI terms, and narrative vocabulary receive strong negative evidence.
-- Ambiguous name-words such as `Rose`, `Hope`, `Raven`, `Summer`, `Hunter`, or `Monday` require genuine human evidence rather than repetition alone.
-- A hard-classified word can still become a character when the story proves it is one—for example an explicitly attributed speaker named `Monday`.
-- Leading titles are normalized during automatic detection so `Captain Reyes` and `Reyes` do not become two brains. Story Card aliases remain untouched.
-- Zero-confidence observations are never written to persistent candidate state.
-- Stale candidates expire after a configurable TTL and the candidate pool has a hard cap.
+A character should have one memory, not five slightly different copies of themselves.
 
-This is deliberately separate from Story Card generation: EIDETIC remembers characters, it does not create junk cards for every capitalized noun it sees.
+EIDETIC can consolidate:
 
-## Core architecture
+- first name ↔ full name
+- title ↔ surname
+- known aliases
+- Story Card aliases
+- codenames
 
-Each turn follows the same broad pipeline:
+while avoiding unsafe merges when names are genuinely ambiguous.
 
-1. **Observe** — process the player action or AI output.
-2. **Identify** — resolve characters, aliases, subjects, and likely scene participants.
-3. **Classify** — determine importance, epistemic type, semantic tags, and knowledge owners.
-4. **Store** — save the episodic record in persistent state.
-5. **Compact** — move sufficiently old detailed records into the compact cold archive.
-6. **Reconcile** — remove invalid retry/undo branch memories.
-7. **Retrieve** — rank a bounded set of memories for active characters.
-8. **Inject** — place a compact, scoped recall packet in Front Memory and cache-compatible Context fallback.
-9. **Scrub** — remove the control packet if a model ever echoes it into visible story prose.
+`Captain Reyes` and `Reyes` can share a brain.
 
-The entire archive is therefore **not** pushed into the model. Most of it remains outside active context until it becomes relevant.
+`John Smith` and `John Doe` remain separate people.
 
-## Install
+Bare `John` is not guessed when that identity is ambiguous.
 
-Paste the files into the matching AI Dungeon script tabs:
+---
 
-| File | AI Dungeon tab |
-|---|---|
-| `Library.js` | Library |
-| `Input.js` | Input |
-| `Context.js` | Context |
-| `Output.js` | Output |
+## 🎬 Scene Presence Tracking
 
-Keep the first line of `Context.js` intact:
+Characters do not need their names repeated in every paragraph to remain present.
 
-```js
-// @cache-compatible
-```
+EIDETIC maintains short-term scene presence so a character can witness continuing events naturally.
 
-For an existing EIDETIC adventure, replace all four script tabs with the hardened files. The state migrator is intended to preserve the existing archive rather than initialize a blank one.
+It also watches for exits, travel, scene changes, departures, teleportation, and similar transitions so someone does not keep “hearing” events after leaving.
 
-Always test upgrades in a duplicate Scenario/Adventure before publishing them broadly.
+Knowledge follows the scene—not the entire cast list.
 
-## Configuration
+---
 
-The main controls are at the top of `Library.js` in `EIDETIC_CONFIG`.
+## 🔁 Retry, Undo & Branch Protection
 
-`SEED_CHARACTERS` and `ALWAYS_FOCUS` can force known recurring characters. In most scenarios Story Cards plus automatic discovery are enough.
+Discarded generations should not become memories.
 
-`NAME_PROMOTION_HITS`, `NAME_PROMOTION_SCORE`, `NAME_STRONG_PROMOTION_SCORE`, `NAME_CANDIDATE_TTL`, `MAX_NAME_CANDIDATES`, `MAX_TRACKED_CHARACTERS`, `MAX_ACTIVE_CHARACTERS`, and `PRESENCE_HOLD_TURNS` control character discovery, anti-junk promotion, candidate cleanup, and scene tracking.
+EIDETIC treats story continuity transactionally:
 
-`HOT_EVENT_LIMIT`, `COLD_EVENT_LIMIT`, `EVENT_CHUNK_CHARS`, `COLD_EVENT_CHARS`, and `MAX_ANCHORS` control archive depth.
+- rejected AI retries are purged
+- replacement outputs replace abandoned realities
+- changed same-turn actions invalidate the old branch
+- undo removes memories from turns that no longer exist
+- stale future events do not remain in character memory
 
-`MEMORIES_PER_CHARACTER`, `ANCHORS_PER_CHARACTER`, `NARRATIVE_MEMORIES`, `GLOBAL_MEMORIES`, `CANDIDATE_HEADROOM`, and `MIN_RECALL_SCORE` control retrieval.
+If the timeline changes, the memory archive changes with it.
 
-`RECALL_BLOCK_MAX_CHARS`, `RECALL_CONTEXT_FRACTION`, and `RECALL_MIN_CHARS` control how much active context EIDETIC may consume.
+---
 
-`STRICT_KNOWLEDGE` should normally remain `true`.
+## 🧹 Repetition Compression
 
-## Commands
+Long adventures often contain routine filler:
 
-```text
-/eidetic
-/memory
-/memstats
-/memdetect
-/roster
-/focus Alice
-/focus Alice, Bob
-/focus auto
-/remember Alice | Alice keeps the silver key Jordan gave her.
-/remember * | The old bridge was destroyed in the winter war.
-/recall Alice | silver key
-/memdebug on
-/memdebug off
-/memclear CONFIRM
-```
+- waiting
+- travelling
+- sleeping
+- repeated status checks
+- quiet transitions
+- nearly identical Continue outputs
 
-`/remember` creates a manual durable anchor. Use it for creator-confirmed facts that absolutely must survive ordinary ranking.
+EIDETIC compresses repetitive low-information material so thousands of mundane turns do not push meaningful memories out of storage.
 
-`/memstats` shows the archive counts, approximate serialized state size, recall revision, and retry-purge count.
+The goal is not to remember **more noise**.
 
-`/memdetect` shows how many characters are tracked, how many unconfirmed candidates are still being watched, how many junk observations have been rejected, how many stale candidates were pruned, and the strongest current candidates.
+The goal is to preserve **more story**.
 
-## What the model sees
+---
 
-A typical block resembles:
+## 📚 Story Card Awareness
 
-```text
-[[EIDETIC_RECALL rev=42 turn=318 sig=...]]
-AUTHORITATIVE MEMORY REVISION 42. Ignore every older EIDETIC_RECALL block with a lower revision...
-PRIVATE CONTINUITY belongs only to that character...
-ALICE MERCER — PRIVATE CONTINUITY:
-• anchor T14 [EVENT]: Alice promised to keep the vault key safe.
-• remembers T201 [BELIEVED/SUSPECTED]: Alice suspected Marek had followed them, but had no proof.
-• remembers T255 [SAID/CLAIMED]: Marek told Alice he had never entered the vault.
-[[/EIDETIC_RECALL]]
-```
+Existing Character Story Cards can reinforce:
 
-Evidence labels are intentional. The model is told not to flatten claims, beliefs, and uncertainty into established canon.
+- identity
+- aliases
+- stable character information
+- active-character continuity
 
-## Knowledge-boundary reality check
+EIDETIC uses them as trusted identity seeds without turning the memory archive into thousands of generated Story Cards.
 
-EIDETIC can stop **its own retrieval layer** from deliberately handing Bob an Alice-only memory. It cannot provide mathematical secrecy if some other part of the model context already contains the information—for example recent History, Plot Essentials, a Story Card, native Memory Bank retrieval, or another script.
+Character memory stays in persistent script state, avoiding trigger clutter and card spam.
 
-The script therefore aims for correct character-scoped retrieval, not impossible information-security guarantees inside a single language-model prompt.
+---
 
-## Why not generate thousands of Story Cards?
+## 🧭 Adaptive Context Intelligence
 
-Story Cards are useful for durable world facts, but an episodic archive with thousands of cards creates trigger collisions, context competition, and maintenance noise.
+EIDETIC does not dump its entire archive into every generation.
 
-EIDETIC keeps the bulk archive in persistent script state and reads existing Story Cards only as identity/continuity seeds. It does not require auto-generating a card for every event.
+Its recall packet scales against the available model-context budget and retrieves only a compact selection of useful memories.
 
-## Research principles behind the hardening pass
+This protects space for:
 
-The hardened architecture deliberately applies several lessons from modern long-term-memory systems:
+- current story history
+- Plot Essentials
+- Story Cards
+- Author's Note
+- instructions
+- other active context
 
-- **Retrieval is not enough:** memory systems need knowledge-update handling, temporal reasoning, and the ability to abstain when evidence is missing.
-- **Salience is not relevance:** an important event should not be retrieved for an unrelated question solely because it was dramatic.
-- **Raw history and structured metadata work better together:** EIDETIC keeps the original episodic text while adding witnesses, subjects, time, epistemic type, and deterministic semantic tags.
-- **Old facts should remain historical rather than silently vanish:** chronological records are preserved; the prompt tells the model to prefer newer explicit evidence when state changes.
-- **Memory must be tested transactionally:** retry, undo, identity collision, stale-cache, privacy, and performance failures are part of the memory problem, not edge decorations.
+The archive can be huge.
 
-See `RESEARCH_HARDENING.md` for the specific research findings and how each one maps to EIDETIC.
+The prompt stays selective.
 
-## Testing
+---
 
-Run:
+## ⚡ Recall Revision Control
 
-```bash
-node test_harness.js
-```
+Memory packets carry revision information.
 
-The hardened harness covers Story Card onboarding, alias consolidation, player exclusion, subject/witness separation, private knowledge isolation, epistemic typing, recall abstention, pre-generation retry cleanup, same-turn branch replacement, undo, state migration, ambiguous first names, append-only context, stale recall revisions, adaptive context budgets, earliest/latest temporal recall, leak scrubbing, JSON safety, junk-name resistance, and a 13,500-record stress archive.
+When the active recall changes, the newest revision is marked authoritative so older cache-visible recall blocks can be ignored.
 
-Run `node detection_harness.js` for the dedicated anti-junk suite. It deliberately feeds every one of the 3,600 explicit non-person phrases through person-like grammar, tests cross-genre false positives, common-word names, title normalization, Story Card type separation, player exclusion, candidate TTL/caps, and four-hook integration.
+This helps prevent stale memory packets from competing with newer ones during long-running or cache-efficient play.
 
-The local benchmark is useful for catching deterministic bugs. AI Dungeon's live sandbox remains authoritative because its runtime and 16 MB memory cap are not identical to a local Node process.
+---
 
-## 2,000-turn endurance validation
+## 🔒 Player Identity Protection
 
-The final build was also driven through seven different **2,000-turn** simulated Adventures: superhero university, high fantasy, noir mystery, family drama, starship science fiction, supernatural horror, and a deliberately repetitive spam/Continue case.
+The player character is not supposed to become a second autonomous NPC copy of themselves.
 
-That produced **14,000 action turns** and **42,036 Input/Context/Output hook executions**. Every varied scenario passed late secret recall, current-state updates, private-knowledge isolation, and belief/rumour typing. The repetition case preserved its early meaningful secret while aggressively compressing thousands of near-identical filler turns.
+EIDETIC uses available character identity information to protect the protagonist from accidental NPC promotion while still allowing the system to track the people around them.
 
-The slowest observed local hook in the final matrix was **474.67 ms**, and the largest serialized long-run state was **2,403,926 characters**. The separate regression harness still stress-tests a synthetic **13,500-record** archive. See `ENDURANCE_RESULTS.md` and `TEST_RESULTS.md`.
+---
 
-## Practical limit
+## 🧬 Persistent Character Continuity
 
-No script can make a finite-context model literally read an unlimited story every turn. The best practical approach is to make storage deep and retrieval selective.
+EIDETIC is designed to make long stories accumulate history instead of constantly rebuilding it.
 
-EIDETIC therefore aims to make the context limit **feel much less restrictive**: the old scene can be thousands of actions behind the current one, but if the archive still contains it and the current scene provides a useful retrieval cue, the relevant memory can return to active context.
+A recurring character can carry forward:
+
+- promises
+- betrayals
+- favours
+- gifts
+- fears
+- discoveries
+- secrets
+- suspicions
+- grudges
+- affection
+- loyalties
+- lies
+- injuries
+- relationship changes
+- past homes
+- former jobs
+- changing beliefs
+- important possessions
+- unresolved questions
+- events they personally witnessed
+
+The character does not need every one of those memories active at once.
+
+They need the **right memory at the right moment**.
+
+---
+
+## 🌌 Built for Long Adventures
+
+EIDETIC does not pretend a finite-context language model has infinite context.
+
+It does something more practical:
+
+**store deeply, retrieve selectively, preserve perspective, and bring the past back when it becomes relevant.**
+
+That can make a conversation from hundreds or thousands of actions ago affect what an NPC says, believes, notices, fears, trusts, hides, or remembers now.
+
+---
+
+# 🧠 EIDETIC
+
+### **The story moves forward. The characters keep the past.**
