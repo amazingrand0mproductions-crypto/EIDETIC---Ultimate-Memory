@@ -1,48 +1,27 @@
-/*
- * EIDETIC — Total Recall Engine for AI Dungeon
- * Persistent, retrieval-based character memory designed for long adventures.
- *
- * Design goals:
- * - Preserve a large archive outside the active model context.
- * - Retrieve only memories relevant to the current scene and active character.
- * - Keep character knowledge separated: an NPC should not recall what they did not witness.
- * - Survive retries, undo, Continue actions, and Optimized Context / cache-efficient models.
- * - Leave normal Story Cards and Plot Essentials alone.
- * - Use only documented AI Dungeon primitives: state, history, storyCards, info, and memory.
- *
- * IMPORTANT REALITY CHECK:
- * No script can increase the model's hard context window. EIDETIC instead stores old events in
- * persistent script state and re-injects a small, ranked selection when relevant. This is the
- * practical way to make a character behave as though they remember far beyond active context.
- */
 
 const EIDETIC_CONFIG = {
   ENABLED: true,
 
-  // Optional guaranteed characters. Leave [] to rely on Story Cards + auto-discovery.
   SEED_CHARACTERS: [],
   ALWAYS_FOCUS: [],
 
-  // Conservative roster discovery prevents locations/titles/player names from becoming NPC brains.
   AUTO_DISCOVER_CHARACTERS: true,
   NAME_PROMOTION_HITS: 2,
-  // Detection v4 uses accumulated evidence, not capitalization alone.
   NAME_PROMOTION_SCORE: 7,
   NAME_STRONG_PROMOTION_SCORE: 7,
   NAME_CANDIDATE_TTL: 80,
   MAX_NAME_CANDIDATES: 240,
   MAX_TRACKED_CHARACTERS: 80,
   MAX_ACTIVE_CHARACTERS: 4,
+  MAX_ALIASES_PER_CHARACTER: 24,
   PRESENCE_HOLD_TURNS: 3,
 
-  // Archive tiers. Old text is compacted rather than being pushed into active model context.
   HOT_EVENT_LIMIT: 4500,
   COLD_EVENT_LIMIT: 9000,
   EVENT_CHUNK_CHARS: 420,
   COLD_EVENT_CHARS: 190,
   MAX_ANCHORS: 1200,
 
-  // Retrieval. Candidate lists are bounded during scanning to avoid transient memory spikes.
   MEMORIES_PER_CHARACTER: 5,
   ANCHORS_PER_CHARACTER: 3,
   NARRATIVE_MEMORIES: 3,
@@ -50,46 +29,35 @@ const EIDETIC_CONFIG = {
   CANDIDATE_HEADROOM: 4,
   MIN_RECALL_SCORE: 2.0,
   RECENT_TURN_SUPPRESSION: 3,
-  // Mundane turns do not need a full 13.5k-record scan. They search all durable anchors plus
-  // a recent hot window; deep archive scans happen on explicit/high-value recall and periodically.
   ROUTINE_HOT_SCAN_LIMIT: 700,
   DEEP_SCAN_INTERVAL: 12,
 
-  // Exact low-salience spam is compressed instead of pushing meaningful history out of the archive.
-  // The first occurrence remains as an episodic memory; later identical repeats are counted on it.
   REPEAT_SUPPRESSION_WINDOW: 60,
   REPEAT_SCAN_LIMIT: 96,
 
-  // Context budget. The hard cap is further reduced automatically on small-context models.
   RECALL_BLOCK_MAX_CHARS: 3200,
   RECALL_CONTEXT_FRACTION: 0.12,
   RECALL_MIN_CHARS: 850,
 
-  // Knowledge boundaries. Mentioning Bob is not evidence that Bob heard the conversation.
   STRICT_KNOWLEDGE: true,
   ENABLE_NARRATIVE_RECALL: true,
   ABSTAIN_ON_EXPLICIT_RECALL_MISS: true,
 
-  // Delivery. frontMemory is authoritative; Context is append-only fallback for cache compatibility.
   USE_FRONT_MEMORY: true,
   APPEND_CONTEXT_FALLBACK: true,
-  // Output only archives by default. The next Input/Context computes recall from the new history.
-  // This avoids an unnecessary full archive scan after every generation while preserving Continue support.
   REFRESH_RECALL_AFTER_OUTPUT: false,
 
-  // Existing Story Cards can reinforce an active NPC's stable identity without being rewritten.
   INCLUDE_RELEVANT_CARD_SEEDS: true,
   CARD_SEED_CHARS: 260,
   MAX_CARD_SEEDS: 2,
 
-  // Invisible by default. Commands can inspect state without story spam.
   DEBUG: false,
 };
 
 const EIDETIC = (() => {
   "use strict";
 
-  const VERSION = "4.0.0";
+  const VERSION = "5.0.0";
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -122,14 +90,6 @@ const EIDETIC = (() => {
     "Doctor Dr Mister Mr Miss Ms Mrs Sir Maam Mom Mum Mother Dad Father Brother Sister Aunt Uncle Cousin Grandma Grandpa " +
     "AI NPC Story Memory Context Continue Do Say See Plot Author Note Nothing Something Anything Everything Someone Anyone Everyone Nobody"
   ).split(/\s+/).map(s => s.toLowerCase()));
-
-  // ---------------------------------------------------------------------------
-  // DETECTION FORTRESS v4
-  // ---------------------------------------------------------------------------
-  // These lexicons are intentionally detection-only. They DO NOT create story cards.
-  // Generic capitalization is weak evidence; dialogue, introductions, human context and
-  // Character Story Cards are strong evidence. Strong evidence can override soft junk
-  // so characters named Rose, Hope, Raven, Summer, Ghost, etc. remain fully supported.
 
   const DETECT_HARD_SINGLE = new Set([
     "a",
@@ -1622,8 +1582,6 @@ const EIDETIC = (() => {
     "work",
   ]);
 
-  // 3,000+ explicit proper-looking non-person phrases observed in common narrative forms.
-  // Exact matches receive a large generic-discovery penalty, but trusted Story Cards override it.
   const DETECT_NONPERSON_PHRASES = new Set([
     "old room",
     "old hall",
@@ -5227,7 +5185,6 @@ const EIDETIC = (() => {
     "medical marsh",
   ]);
 
-
   const PRESENCE_VERBS = [
     "says", "asks", "replies", "whispers", "shouts", "yells", "nods", "smiles", "frowns", "laughs", "cries",
     "looks", "watches", "stares", "turns", "walks", "steps", "moves", "sits", "stands", "leans", "reaches",
@@ -5240,8 +5197,6 @@ const EIDETIC = (() => {
     "drives away", "hangs up", "hung up", "teleports away", "disappears", "disappeared", "goes home", "went home"
   ];
 
-  // Detection regex fragments are compiled once per hook execution (Library load), not rebuilt
-  // repeatedly inside every candidate scan. This keeps the large lexicon cheap during long stories.
   const DETECT_PROPER_PATTERN = "([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,2})";
   const DETECT_PRESENCE_ALT = PRESENCE_VERBS.map(escapeRe).join("|");
   const DETECT_KIN_ALT = Array.from(DETECT_KINSHIP).map(escapeRe).sort((a,b)=>b.length-a.length).join("|");
@@ -5267,7 +5222,7 @@ const EIDETIC = (() => {
   function makeFreshRoot() {
     return {
       v: VERSION,
-      schema: 3,
+      schema: 4,
       seq: 0,
       hot: [],
       cold: [],
@@ -5278,7 +5233,7 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "" },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "" },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
       stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
@@ -5286,8 +5241,6 @@ const EIDETIC = (() => {
   }
 
   function migrateRoot(old) {
-    // Never discard an existing archive just because the script was upgraded.
-    // Unknown fields are preserved; only missing v2 fields are added.
     const r = old && typeof old === "object" ? old : makeFreshRoot();
     if (!Array.isArray(r.hot)) r.hot = [];
     if (!Array.isArray(r.cold)) r.cold = [];
@@ -5304,6 +5257,7 @@ const EIDETIC = (() => {
     if (typeof r.runtime.recallPayloadSig !== "string") r.runtime.recallPayloadSig = "";
     if (typeof r.runtime.recallCacheKey !== "string") r.runtime.recallCacheKey = "";
     if (typeof r.runtime.recallCacheBlock !== "string") r.runtime.recallCacheBlock = "";
+    if (typeof r.runtime.storyCardSig !== "string") r.runtime.storyCardSig = "";
     if (!r.stats || typeof r.stats !== "object") r.stats = {};
     if (!r.last || typeof r.last !== "object") r.last = {};
     if (!Number.isFinite(r.last.inputTurn)) r.last.inputTurn = -1;
@@ -5313,7 +5267,7 @@ const EIDETIC = (() => {
       r.cold = r.cold.map(packCold).filter(Boolean);
     }
     r.v = VERSION;
-    r.schema = 3;
+    r.schema = 4;
     r.debug = typeof r.debug === "boolean" ? r.debug : !!EIDETIC_CONFIG.DEBUG;
     return r;
   }
@@ -5337,9 +5291,6 @@ const EIDETIC = (() => {
     return v == null ? "" : String(v);
   }
 
-  // Cold archive records use compact tuples to reduce persistent-state overhead:
-  // [id, turn, kind, text, owners, names, subjects, keywords, importance, epistemicMode, source]
-  // Accessors keep v1 object records backward compatible during migration.
   function isPackedRecord(e) { return Array.isArray(e); }
   function recId(e) { return isPackedRecord(e) ? e[0] : e && e.id; }
   function recTurn(e) { return Number(isPackedRecord(e) ? e[1] : e && e.turn) || 0; }
@@ -5539,16 +5490,12 @@ const EIDETIC = (() => {
 
   function isPlausibleName(name, trusted) {
     if (!syntacticIdentity(name, !!trusted)) return false;
-    // Semantic junk is handled by scored evidence rather than being banned here. This matters for
-    // legitimate characters named Monday, Rose, Summer, Ghost, etc. when the prose proves personhood.
     return true;
   }
 
   function canonicalizeDetectedName(name) {
     name = safeText(name).replace(/\s+/g, " ").trim();
     let bits = name.split(" ").filter(Boolean);
-    // Auto-detection strips honorifics/roles to avoid Captain Reyes + Reyes becoming two brains.
-    // Trusted Story Cards keep their exact supplied identity and aliases.
     while (bits.length > 1) {
       const first = bits[0].replace(/[^A-Za-z]/g, "").toLowerCase();
       if (!DETECT_STRIPPABLE_TITLES.has(first)) break;
@@ -5568,12 +5515,7 @@ const EIDETIC = (() => {
       const k = normName(name);
       if (!k) return;
       const penalty = detectionPenalty(name);
-      // Strong human evidence is allowed to override generic-word penalties. This is what lets
-      // "Rose says..." or even a sentient entity like "Ghost replies..." work without allowing
-      // repeated occurrences of "Rose Garden" or "Ghost Station" to become NPC brains.
       const hardOverride = reason === "dialogue-attribution" || reason === "speaker-verb" || reason === "direct-address";
-      // Hard non-person classifications do not accumulate merely because prose repeats them.
-      // A location/object-like phrase needs explicit speaker/direct-address evidence to cross that wall.
       const appliedPenalty = strong ? (hardOverride ? Math.min(3, penalty) : Math.min(6, penalty)) : penalty;
       let score = Math.max(-8, base - appliedPenalty);
       if (penalty >= 8 && !hardOverride) score = Math.min(0, score);
@@ -5589,18 +5531,15 @@ const EIDETIC = (() => {
     const verbs = DETECT_PRESENCE_ALT;
     let m;
 
-    // 1) The strongest autonomous-person signal: named subject performs a person/action verb.
     const actor = new RegExp("\\b" + proper + "\\s+(" + verbs + ")\\b", "g");
     while ((m = actor.exec(text)) !== null) {
       const speech = /^(?:says|asks|replies|whispers|shouts|yells|answers|speaks)$/i.test(m[2] || "");
       add(m[1], speech ? 12 : 10, speech ? "speaker-verb" : "actor-verb", true);
     }
 
-    // 2) Dialogue attribution after a quote.
     const afterQuote = new RegExp("[.!?][”\"]?\\s*,?\\s*" + proper + "\\s+(?:says|asks|replies|whispers|shouts|yells|answers|murmurs|mutters)\\b", "g");
     while ((m = afterQuote.exec(text)) !== null) add(m[1], 12, "dialogue-attribution", true);
 
-    // 3) Explicit introductions/naming. These are strong enough for immediate promotion.
     const introPatterns = [
       new RegExp("\\b(?:this is|meet|introducing|introduced as|known as|called|named)\\s+" + proper + "\\b", "gi"),
       new RegExp("\\b(?:my name is|I am|I'm)\\s+" + proper + "\\b", "g"),
@@ -5608,28 +5547,21 @@ const EIDETIC = (() => {
     ];
     for (let pi = 0; pi < introPatterns.length; pi++) while ((m = introPatterns[pi].exec(text)) !== null) add(m[1], 13, "explicit-introduction", true);
 
-    // 4) Human relation + name: my sister Maya, her friend Callum Reed, roommate Leah.
     const relation = new RegExp("\\b(?:my|your|his|her|their|our|the)\\s+(?:" + DETECT_KIN_ALT + ")\\s+" + proper + "\\b", "gi");
     while ((m = relation.exec(text)) !== null) add(m[1], 11, "named-relation", true);
 
-    // 5) Occupational/title introduction: Detective Mara Vance, Dr. Voss, Captain Reyes.
     const titled = new RegExp("\\b(?:" + DETECT_ROLE_ALT + ")\\.?\\s+" + proper + "\\b", "gi");
     while ((m = titled.exec(text)) !== null) add(m[1], 10, "person-title", true);
 
-    // 6) Direct address is strong evidence even for common-word names: "Rose, wait." / Maya, listen.
     const vocative = new RegExp("(?:^|[\\n.!?\"“”])\\s*" + proper + "\\s*[,—-]\\s*(?:please\\s+)?(?:wait|listen|look|stop|come|go|help|tell|answer|stay|run|move|wake|sit|stand|hey)\\b", "g");
     while ((m = vocative.exec(text)) !== null) add(m[1], 9, "direct-address", true);
 
-    // 7) Human possessive context: Maya's eyes, Callum's voice, Leah's expression.
     const possessive = new RegExp("\\b" + proper + "['’]s\\s+(?:" + DETECT_HUMAN_ALT + ")\\b", "g");
     while ((m = possessive.exec(text)) !== null) add(m[1], 8, "human-possessive", true);
 
-    // 8) Named recipient of clearly interpersonal verbs.
     const recipient = new RegExp("\\b(?:tell|tells|told|ask|asks|asked|call|calls|called|phone|phones|phoned|text|texts|texted|hug|hugs|hugged|kiss|kisses|kissed|meet|meets|met|follow|follows|followed|help|helps|helped|thank|thanks|thanked)\\s+(?:to\\s+)?" + proper + "\\b", "gi");
     while ((m = recipient.exec(text)) !== null) add(m[1], 9, "interpersonal-recipient", true);
 
-    // 9) Conservative generic proper noun observation. This never promotes most common narrative
-    // words by itself; a novel-looking name normally needs two distinct turns (score 4 + 4).
     const generic = /\b([A-Z][a-z][A-Za-z'\-]{1,20}(?:\s+[A-Z][a-z][A-Za-z'\-]{1,20}){0,2})\b/g;
     while ((m = generic.exec(text)) !== null) add(m[1], 4, "generic-capitalized", false);
 
@@ -5679,7 +5611,6 @@ const EIDETIC = (() => {
       if (r.chars[key].aliases.indexOf(name) < 0) r.chars[key].aliases.push(name);
       return key;
     }
-    // Canonical keys may predate a later full-name discovery. Resolve exact known aliases first.
     const aliasKeys = Object.keys(r.chars);
     for (let ai = 0; ai < aliasKeys.length; ai++) {
       const ach = r.chars[aliasKeys[ai]];
@@ -5690,8 +5621,6 @@ const EIDETIC = (() => {
       }
     }
 
-    // Merge a bare first name with a full name only while that first name is unambiguous.
-    // If John Smith and John Doe both exist, bare "John" is deliberately not resolved to either.
     const incomingParts = key.split(" ");
     const first = incomingParts[0];
     const existingKeys = Object.keys(r.chars);
@@ -5791,7 +5720,6 @@ const EIDETIC = (() => {
     r.playerNames = Array.from(names).slice(0, 16);
     if (r.playerNames.length) r.playerName = r.playerNames[0];
 
-    // If an older build accidentally promoted the player as an NPC, stop routing new private memory to it.
     const keys = Object.keys(r.chars);
     for (let i = 0; i < keys.length; i++) if (isPlayerName(r.chars[keys[i]].name)) delete r.chars[keys[i]];
   }
@@ -5815,13 +5743,47 @@ const EIDETIC = (() => {
       if (normName(ch.name) === nk || (ch.aliases || []).some(a => normName(a) === nk)) return false;
     }
     const ch = r.chars[charKey];
-    if (!(ch.aliases || []).some(a => normName(a) === nk)) ch.aliases.push(alias);
+    ch.aliases = Array.isArray(ch.aliases) ? ch.aliases : [ch.name];
+    if (!(ch.aliases || []).some(a => normName(a) === nk)) {
+      if (ch.aliases.length >= EIDETIC_CONFIG.MAX_ALIASES_PER_CHARACTER) return false;
+      ch.aliases.push(alias);
+    }
     ch.lastSource = source || ch.lastSource;
     return true;
   }
 
+  function storyCardAliasCandidate(alias, canonical, entryName, entryText) {
+    alias = safeText(alias).replace(/\s+/g, " ").trim();
+    if (!alias || alias.length > 64 || isPlayerName(alias)) return false;
+    const n = normName(alias);
+    const canon = normName(canonical);
+    const entry = normName(entryName || "");
+    const firsts = [canon, entry].filter(Boolean).map(x => x.split(" ")[0]);
+    if (n === canon || n === entry || (n.indexOf(" ") < 0 && firsts.indexOf(n) >= 0)) return true;
+    const displayLike = /^[A-Z0-9][A-Za-z0-9'\-]*(?:\s+[A-Z0-9][A-Za-z0-9'\-]*){0,3}$/.test(alias);
+    if (!displayLike || !syntacticIdentity(alias, true) || detectionPenalty(alias) >= 8) return false;
+    const entryRaw = cleanText(entryText || "");
+    if (entryRaw) {
+      const a = escapeRe(alias);
+      const identityContext = new RegExp("\\b(?:known as|also known as|called|codename|code name|alias|aka|a\\.k\\.a\\.|goes by|hero name|villain name|nickname)\\b[^.!?]{0,48}\\b" + a + "\\b", "i");
+      if (identityContext.test(entryRaw)) return true;
+    }
+    if (/^[A-Z0-9][A-Z0-9'\-]{2,}$/.test(alias)) return true;
+    return false;
+  }
+
   function seedFromStoryCards() {
     if (typeof storyCards === "undefined" || !Array.isArray(storyCards)) return;
+    const r = root();
+    const sigParts = [];
+    for (let i = 0; i < storyCards.length; i++) {
+      const c = storyCards[i] || {};
+      const type = safeText(c.type).toLowerCase();
+      if (!/character|npc|person|people|cast/.test(type)) continue;
+      sigParts.push(safeText(c.id) + "|" + type + "|" + safeText(c.keys) + "|" + cleanText(c.entry));
+    }
+    const sig = hash(sigParts.join("\u001e"));
+    if (r && r.runtime && r.runtime.storyCardSig === sig) return;
     for (let i = 0; i < storyCards.length; i++) {
       const c = storyCards[i] || {};
       const type = safeText(c.type).toLowerCase();
@@ -5830,11 +5792,7 @@ const EIDETIC = (() => {
       const characterish = /character|npc|person|people|cast/.test(type);
       if (!characterish) continue;
 
-      // A character card represents ONE identity. Triggers such as
-      // "Maya Walker, Maya, Solar Girl" are aliases for that character, not three NPC brains.
       const entryName = entry.match(/^(?:name\s*[:=-]\s*)?([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,2})(?:\s+is\b|\s*[,;:\-])/);
-      // Preserve the first plausible trigger as the canonical key for save compatibility, then
-      // attach the entry's full name and the remaining triggers as aliases to that same identity.
       let canonical = "";
       for (let j = 0; j < rawKeys.length; j++) {
         if (isPlausibleName(rawKeys[j], true)) { canonical = rawKeys[j]; break; }
@@ -5846,13 +5804,11 @@ const EIDETIC = (() => {
       if (entryName && isPlausibleName(entryName[1], true)) charKey = ensureChar(entryName[1], "story-card-entry", true) || charKey;
       for (let j = 0; j < rawKeys.length; j++) {
         const alias = rawKeys[j];
-        // Lowercase topical triggers are not identity aliases, but titled handles/codenames are useful.
-        if (isPlausibleName(alias, true) || /^[A-Z0-9][A-Za-z0-9'\-]*(?:\s+[A-Z0-9][A-Za-z0-9'\-]*){0,3}$/.test(alias)) {
-          addAliasToCharacter(charKey, alias, "story-card-alias");
-        }
+        if (storyCardAliasCandidate(alias, canonical, entryName && entryName[1], entry)) addAliasToCharacter(charKey, alias, "story-card-alias");
       }
       if (entryName) addAliasToCharacter(charKey, entryName[1], "story-card-entry");
     }
+    if (r && r.runtime) r.runtime.storyCardSig = sig;
   }
 
   function candidateNamesFromText(text) {
@@ -6009,7 +5965,6 @@ const EIDETIC = (() => {
     const po = privateOwner(text);
     if (po) return new Set([PLAYER, po]);
 
-    // Existing scene participants witnessed public events. Merely being named as a subject is not enough.
     if (EIDETIC_CONFIG.STRICT_KNOWLEDGE) {
       const sceneKeys = Object.keys(r.scene);
       for (let i = 0; i < sceneKeys.length; i++) {
@@ -6029,8 +5984,6 @@ const EIDETIC = (() => {
     text = cleanText(text);
     if (!text) return [];
     const max = EIDETIC_CONFIG.EVENT_CHUNK_CHARS;
-    // Sentence-first units let witness state advance in narrative order. They are re-coalesced
-    // after ownership is known, so this improves knowledge boundaries without exploding storage.
     const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
     const out = [];
     for (let i = 0; i < sentences.length; i++) {
@@ -6101,7 +6054,6 @@ const EIDETIC = (() => {
       manual: !!manual,
     });
     if (r.anchors.length > EIDETIC_CONFIG.MAX_ANCHORS) {
-      // Prefer manual, high-confidence, important and newer anchors.
       r.anchors.sort((a, b) => (((b.manual ? 100 : 0) + evidenceRank(b.mode, b.manual) * 8 + b.imp * 5 + b.turn / 1000) - ((a.manual ? 100 : 0) + evidenceRank(a.mode, a.manual) * 8 + a.imp * 5 + a.turn / 1000)));
       r.anchors.length = EIDETIC_CONFIG.MAX_ANCHORS;
       r.anchors.sort((a, b) => a.turn - b.turn);
@@ -6142,10 +6094,6 @@ const EIDETIC = (() => {
     const r = root();
     if (!r) return;
     const limit = Math.max(1, EIDETIC_CONFIG.HOT_EVENT_LIMIT || 4500);
-    // Array.shift() on a 4,500-record archive is O(n). Doing it for every new segment makes
-    // very long adventures progressively more expensive. Allow a small temporary margin and
-    // compact many oldest records in one splice. The durable capacity is unchanged; hot may
-    // briefly float a few percent above the target between compactions.
     const margin = Math.max(16, Math.min(48, Math.floor(limit * 0.004)));
     if (r.hot.length > limit + margin) {
       const count = r.hot.length - limit;
@@ -6168,9 +6116,6 @@ const EIDETIC = (() => {
   function rollbackFuture(turn) {
     const r = root();
     if (!r) return;
-    // Normal play is monotonic. Avoid filtering/copying the entire archive on every Input,
-    // Context and Output hook; only perform the expensive branch cleanup when actionCount
-    // actually moved backwards (Undo/Rewind).
     const lastTurn = r.last && Number.isFinite(r.last.turn) ? r.last.turn : null;
     if (lastTurn != null && turn >= lastTurn) return;
 
@@ -6201,8 +6146,6 @@ const EIDETIC = (() => {
         }
       }
     };
-    // Same-turn events should always be hot, but scanning the cold tail as a defensive fallback
-    // keeps custom tiny HOT_EVENT_LIMIT configurations retry-safe.
     scanTail(r.hot);
     if (!out.length) scanTail(r.cold);
     return out;
@@ -6271,13 +6214,9 @@ const EIDETIC = (() => {
     const cleaned = cleanText(text);
     if (!cleaned) return;
 
-    // Discover identities from the complete hook text first, but advance scene/witness state
-    // sentence-by-sentence below. This prevents a later sentence from retroactively witnessing an earlier one.
     discover(cleaned);
     const srcHash = hash(kind + "|" + cleaned);
 
-    // Replacing a player input on an undone branch invalidates the old same-turn model output immediately,
-    // before that discarded reality can influence the next generation.
     if (kind === "input") {
       const existingSources = sameTurnSources(turn, "input");
       if (existingSources.length && existingSources.indexOf(srcHash) < 0) purgeTurnKind(turn, "output");
@@ -6291,11 +6230,8 @@ const EIDETIC = (() => {
     for (let i = 0; i < chunks.length; i++) {
       const c = chunks[i];
 
-      // A scene jump occurs before the new sentence. Old participants must not inherit the new scene.
       if (sceneResetEvidence(c)) r.scene = {};
 
-      // Ownership is computed BEFORE scene state advances. Direct entrants are still participants,
-      // while a character who exits this sentence retains memory of their own departure.
       const owners = ownerSetFor(c, kind);
       const ownerArray = Array.from(owners);
       const names = namesMentioned(c);
@@ -6307,8 +6243,6 @@ const EIDETIC = (() => {
 
       const repeated = suppressExactRepeat(c, kind, ownerArray, mode, imp);
       if (!repeated) {
-        // Re-coalesce adjacent sentence memories only after witness/epistemic boundaries agree.
-        // This retains compact storage while preventing cross-sentence knowledge leakage.
         const canMerge = previousStored &&
           previousStored.turn === turn && previousStored.kind === kind && previousStored.mode === mode &&
           sameOwnerSet(previousStored.owners, ownerArray) &&
@@ -6338,7 +6272,6 @@ const EIDETIC = (() => {
         if (anchorEligible(c, mode)) addAnchor(c, owners, turn, kind, false, mode, names, subjects);
       }
 
-      // Advance scene state only after this sentence has been recorded.
       updateScene(c);
     }
     moveHotToCold();
@@ -6370,10 +6303,6 @@ const EIDETIC = (() => {
     const allTokens = lexicalTokens.slice();
     for (let i = 0; i < tags.length; i++) if (allTokens.indexOf(tags[i]) < 0) allTokens.push(tags[i]);
     const temporal = temporalIntent(query);
-    // Questions about a character's *current* state are retrieval requests even when the player
-    // never says "remember". Without this, recent routine scenes can outrank the actual updated
-    // state merely because "now" requests newest information. Treat these as explicit/topical
-    // lookups so only records matching the requested subject survive before temporal ordering.
     const currentStateLookup = /\b(?:where|what|who|which|how)\b[\s\S]{0,100}\b(?:now|currently|current|presently|still|these days|nowadays|at present)\b/i.test(query) ||
       /\bwhere\b[\s\S]{0,80}\b(?:live|lives|living|stay|stays|home|work|works|located|based)\b/i.test(query);
     return {
@@ -6422,9 +6351,6 @@ const EIDETIC = (() => {
     if (charKey && !eventOwnerAllows(e, charKey)) return -999;
     const age = Math.max(0, turn - recTurn(e));
     const recordMode = recMode(e);
-    // If the player asks specifically what somebody suspected/believed/said, ordinary scene events
-    // are not evidence for that mental/propositional question. Filtering by epistemic class prevents
-    // recent routine prose from drowning an old belief or claim in very long adventures.
     if (plan.epistemicIntent === "belief" && recordMode !== "belief" && recordMode !== "uncertain") return -999;
     if (plan.epistemicIntent === "uncertain" && recordMode !== "uncertain" && recordMode !== "belief") return -999;
     if (plan.epistemicIntent === "claim" && recordMode !== "claim") return -999;
@@ -6440,7 +6366,6 @@ const EIDETIC = (() => {
     for (let i = 0; i < tags.length; i++) {
       if (kw.indexOf("|" + tags[i] + "|") < 0) continue;
       tagMatches++;
-      // @time is intentionally weak: many unrelated memories contain dates/then/now language.
       if (tags[i] !== "@time") strongTagMatches++;
     }
     let topicalEntityMatches = 0;
@@ -6452,19 +6377,9 @@ const EIDETIC = (() => {
         if (!charKey || plan.names[i] !== charKey) topicalEntityMatches++;
       }
     }
-    // Importance is salience, not relevance. During an explicit recall request, a record must
-    // actually match the topic (or another named entity) or it is excluded rather than hallucinated into relevance.
     if (plan.explicitRecall || plan.temporal !== "neutral") {
-      // Recall/current-state queries must stay on-topic. Otherwise an unrelated newer secret or
-      // high-importance anchor can outrank the thing the player actually asked about.
-      // For explicit current-state questions, require the semantic class itself when available.
-      // This prevents generic narrative wording such as "moving on" from competing with a
-      // location query like "where does she live now after moving home?".
       if (plan.currentStateLookup && tags.some(t => t !== "@time") && strongTagMatches === 0) return -999;
       if (plan.currentStateLookup && tags.indexOf("@location") >= 0) {
-        // Prefer the location-state words the player actually used (live/home/address/etc.) over
-        // incidental motion prose. This keeps "moving on" or "house repairs" from masquerading
-        // as a changed residence in long adventures.
         const locFocus = lexical.filter(t => /^(?:live|lives|living|home|address|residence|located|based|stay|stays|staying|quarters|flat|apartment|house|room)$/i.test(t));
         if (locFocus.length) {
           let locMatches = 0;
@@ -6496,7 +6411,6 @@ const EIDETIC = (() => {
       const rec = records[i];
       const key = hash(safeText(rec.text).toLowerCase().replace(/[^a-z0-9]+/g, " ").slice(0, 180));
       if (seen.has(key)) continue;
-      // Lightweight diversity: avoid returning several near-identical memories from the same turn.
       if (out.some(x => x.turn === rec.turn && safeText(x.k) === safeText(rec.k))) continue;
       seen.add(key);
       out.push(rec);
@@ -6538,7 +6452,6 @@ const EIDETIC = (() => {
     const acap = Math.max(anchorLimit || 0, 1) * EIDETIC_CONFIG.CANDIDATE_HEADROOM;
     const mcap = Math.max(memoryLimit || 0, 1) * EIDETIC_CONFIG.CANDIDATE_HEADROOM;
     const anchors = [], memories = [];
-    // Anchors are intentionally always scanned: they are the small, durable continuity layer.
     for (let i = 0; i < r.anchors.length; i++) {
       const e = r.anchors[i], sc = scoreRecord(e, plan, charKey, turn, true, false);
       boundedCandidatePush(anchors, e, sc, acap);
@@ -6585,7 +6498,6 @@ const EIDETIC = (() => {
       const fp = hash(safeText(e.text).toLowerCase().replace(/[^a-z0-9]+/g, " ").slice(0, 180));
       const existing = all.find(x => x.fp === fp);
       if (existing) {
-        // Prefer the durable anchor representation when the same event exists in both tiers.
         if (kind === "anchor" && existing.kind !== "anchor") { existing.e = e; existing.kind = kind; }
         return;
       }
@@ -6628,9 +6540,6 @@ const EIDETIC = (() => {
 
   function buildQuery(extraText) {
     const focus = cleanText(extraText || "");
-    // When a hook gives us the current action/output, that text is the retrieval question. Pulling
-    // the previous routine turn into a recall request can swamp an old precise memory with recent noise.
-    // Only very short/deictic inputs borrow a small amount of immediate history.
     if (focus) {
       if (explicitRecallLanguage(focus) || focus.length >= 64 || namesMentioned(focus).length) return focus.slice(-1400);
       const parts = [];
@@ -6681,7 +6590,6 @@ const EIDETIC = (() => {
     const body = [];
 
     const seeds = relevantCardSeeds(active);
-    // During an explicit recall, matching history gets packet priority over static identity reinforcement.
     if (!plan.explicitRecall) for (let i = 0; i < seeds.length; i++) body.push("ESTABLISHED — " + seeds[i].name + ": " + seeds[i].text);
 
     for (let i = 0; i < active.length; i++) {
@@ -6707,8 +6615,6 @@ const EIDETIC = (() => {
       }
     }
 
-    // Narrator/player-known recall preserves plot continuity even when the NPC being discussed is absent.
-    // It does NOT expose an absent NPC's private section; it only retrieves records visible to @player.
     if (EIDETIC_CONFIG.ENABLE_NARRATIVE_RECALL && !active.length && (plan.explicitRecall || plan.names.length)) {
       const got = retrieveForOwner(PLAYER, query, EIDETIC_CONFIG.NARRATIVE_MEMORIES, 1);
       if (got.anchors.length || got.memories.length) {
@@ -6764,7 +6670,6 @@ const EIDETIC = (() => {
       const headerLines = budget < 1800 ? compactHeader : lines.slice(0, 6);
       const tail = "\n" + CLOSE;
       let packed = headerLines.join("\n");
-      // body is already relevance-ordered. Keep complete lines so a crucial memory is never cut mid-fact.
       for (let i = 0; i < body.length; i++) {
         const candidate = packed + "\n" + body[i] + tail;
         if (candidate.length > budget) break;
@@ -6829,7 +6734,6 @@ const EIDETIC = (() => {
 
   function scrubLeak(text) {
     text = safeText(text);
-    // If the model ever copies the hidden memory block verbatim, remove it from visible prose.
     text = text.replace(/\[\[EIDETIC_RECALL[^\n]*\]\][\s\S]*?\[\[\/EIDETIC_RECALL\]\]/gi, "").replace(/^\s+/, "");
     return text;
   }
@@ -7007,14 +6911,11 @@ const EIDETIC = (() => {
     }
 
     if (hook === "context" || hook === "contextAppend") {
-      // Normal actions already computed recall in Input. Reuse it byte-for-byte instead of scanning
-      // the archive again. Continue/no-input generations fall through to a fresh Context retrieval.
       let block = currentFrontRecallBlock();
       if (!block) block = buildRecall("");
       if (block) {
         setFrontMemory(block);
         if (EIDETIC_CONFIG.APPEND_CONTEXT_FALLBACK && !currentRecallAlreadyInText(text, block)) {
-          // Cache-compatible rule: do not alter a single existing character; append only.
           const out = safeText(text) + (safeText(text).endsWith("\n") ? "" : "\n") + block;
           debugLog("context appended " + block.length + " chars");
           return { text: out, stop: false };
@@ -7038,7 +6939,6 @@ const EIDETIC = (() => {
     return { text: text, stop: false };
   }
 
-  // Small diagnostic surface for local harnesses. It is inert in normal play.
   run._test = {
     version: VERSION,
     root: root,
@@ -7051,6 +6951,7 @@ const EIDETIC = (() => {
     makeQueryPlan: makeQueryPlan,
     participantKeys: participantKeys,
     effectiveRecallBudget: effectiveRecallBudget,
+    storyCardAliasCandidate: storyCardAliasCandidate,
   };
 
   return run;
