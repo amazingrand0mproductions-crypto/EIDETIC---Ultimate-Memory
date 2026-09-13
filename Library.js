@@ -1,6 +1,8 @@
 
 const EIDETIC_CONFIG = {
   ENABLED: true,
+  AUTO_CONFIG_CARD: true,
+  CONFIG_CARD_KEY: "%EIDETIC_CONFIG_5_1%",
 
   SEED_CHARACTERS: [],
   ALWAYS_FOCUS: [],
@@ -57,7 +59,7 @@ const EIDETIC_CONFIG = {
 const EIDETIC = (() => {
   "use strict";
 
-  const VERSION = "5.0.0";
+  const VERSION = "5.1.0";
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -5772,6 +5774,156 @@ const EIDETIC = (() => {
     return false;
   }
 
+
+  function configCardNotes() {
+    return [
+      "🧠 EIDETIC — CONFIG & QUICK GUIDE",
+      "",
+      "EIDETIC works automatically. You do NOT need commands, setup cards, or a character list.",
+      "This card is for simple settings and reference. Its trigger is intentionally hidden, so its Entry does not enter AI context.",
+      "",
+      "⚙️ SETTINGS — edit only the value after =",
+      "enabled = on",
+      "strictKnowledge = on",
+      "autoDetect = on",
+      "narrativeRecall = on",
+      "abstainOnMiss = on",
+      "memoryDepth = deep",
+      "recallSize = balanced",
+      "activeCharacters = 4",
+      "debug = off",
+      "",
+      "📖 WHAT EACH SETTING MEANS",
+      "enabled — on/off. Master switch for EIDETIC.",
+      "strictKnowledge — Keeps private knowledge with characters who actually knew/witnessed it. Recommended: on.",
+      "autoDetect — Automatically discovers NPCs from Story Cards and story text while filtering junk. Recommended: on.",
+      "narrativeRecall — Allows useful non-private story memories to return when relevant.",
+      "abstainOnMiss — Stops explicit recall from inventing a past memory when no matching evidence exists. Recommended: on.",
+      "memoryDepth — compact / standard / deep. Controls archive capacity. Deep keeps the full 4,500 hot + 9,000 cold design.",
+      "recallSize — small / balanced / large. Controls how much recalled memory may enter active context. Balanced is recommended.",
+      "activeCharacters — 1–8. Maximum NPC memory sections considered at once. 4 is recommended.",
+      "debug — Shows extra script diagnostics. Leave off unless troubleshooting.",
+      "",
+      "✨ AUTOMATIC FEATURES",
+      "• Deep episodic memory with hot + cold archives",
+      "• Durable anchors for major secrets, promises, deaths, relationships and important facts",
+      "• Character-scoped knowledge and witness-aware recall",
+      "• Facts, claims, suspicions, uncertainty and unresolved questions stay distinct",
+      "• Time-aware first / previous / latest / current recall",
+      "• Smart relevance ranking instead of dumping the archive into context",
+      "• Detection Fortress anti-junk NPC detection",
+      "• Alias, title and codename merging",
+      "• Scene presence tracking",
+      "• Retry, undo and abandoned-branch cleanup",
+      "• Repetition compression",
+      "• Character Story Card awareness",
+      "• Adaptive context budgeting and stale-recall revision protection",
+      "",
+      "💡 NORMAL USE",
+      "Just play. EIDETIC observes the story, stores memories, and recalls relevant ones automatically.",
+      "Commands are optional tools, not required for the memory engine to work.",
+      "",
+      "🛠️ OPTIONAL COMMANDS",
+      "/eidetic or /memory — quick status/help",
+      "/memstats — archive statistics",
+      "/memdetect — character detection status",
+      "/roster — tracked NPCs",
+      "/focus Alice — temporarily prioritize Alice",
+      "/focus auto — return to automatic focus",
+      "/remember Alice | fact — permanently anchor a creator-confirmed memory",
+      "/recall Alice | topic — inspect recall for a topic",
+      "/memdebug on/off — diagnostics",
+      "/memclear CONFIRM — erase EIDETIC memory",
+      "",
+      "⚠️ Keep the setting names unchanged. If a value is invalid, EIDETIC safely falls back to its default."
+    ].join("\n");
+  }
+
+  function findConfigCardIndex() {
+    if (typeof storyCards === "undefined" || !Array.isArray(storyCards)) return -1;
+    const wanted = safeText(EIDETIC_CONFIG.CONFIG_CARD_KEY);
+    for (let i = 0; i < storyCards.length; i++) {
+      const c = storyCards[i] || {};
+      const keys = Array.isArray(c.keys) ? c.keys.join(",") : safeText(c.keys);
+      if (keys.split(",").map(x => x.trim()).indexOf(wanted) >= 0) return i;
+      if (safeText(c.title) === "🧠 EIDETIC — Config & Guide") return i;
+    }
+    return -1;
+  }
+
+  function ensureConfigCard() {
+    if (!EIDETIC_CONFIG.AUTO_CONFIG_CARD || typeof storyCards === "undefined" || !Array.isArray(storyCards)) return null;
+    let idx = findConfigCardIndex();
+    if (idx < 0 && typeof addStoryCard === "function") {
+      try {
+        addStoryCard(EIDETIC_CONFIG.CONFIG_CARD_KEY, "", "Custom");
+        idx = findConfigCardIndex();
+        if (idx < 0) {
+          for (let i = storyCards.length - 1; i >= 0; i--) {
+            const c = storyCards[i] || {};
+            const keys = Array.isArray(c.keys) ? c.keys.join(",") : safeText(c.keys);
+            if (keys.indexOf(EIDETIC_CONFIG.CONFIG_CARD_KEY) >= 0) { idx = i; break; }
+          }
+        }
+      } catch (_) {}
+    }
+    if (idx < 0 || !storyCards[idx]) return null;
+    const c = storyCards[idx];
+    c.type = "Custom";
+    c.title = "🧠 EIDETIC — Config & Guide";
+    c.entry = "";
+    c.keys = EIDETIC_CONFIG.CONFIG_CARD_KEY;
+    if (typeof c.description !== "string" || !/EIDETIC — CONFIG & QUICK GUIDE/.test(c.description)) {
+      c.description = configCardNotes();
+    }
+    return c;
+  }
+
+  function configValue(notes, key) {
+    const m = safeText(notes).match(new RegExp("^\\s*" + escapeRe(key) + "\\s*=\\s*([^\\r\\n#]+)", "im"));
+    return m ? m[1].trim().toLowerCase() : "";
+  }
+
+  function applyConfigCard() {
+    const c = ensureConfigCard();
+    if (!c) return;
+    const n = safeText(c.description);
+    const on = v => /^(on|true|yes|1|enabled)$/.test(v);
+    const off = v => /^(off|false|no|0|disabled)$/.test(v);
+    const bool = (key, fallback) => {
+      const v = configValue(n, key);
+      return on(v) ? true : off(v) ? false : fallback;
+    };
+
+    EIDETIC_CONFIG.ENABLED = bool("enabled", true);
+    EIDETIC_CONFIG.STRICT_KNOWLEDGE = bool("strictKnowledge", true);
+    EIDETIC_CONFIG.AUTO_DISCOVER_CHARACTERS = bool("autoDetect", true);
+    EIDETIC_CONFIG.ENABLE_NARRATIVE_RECALL = bool("narrativeRecall", true);
+    EIDETIC_CONFIG.ABSTAIN_ON_EXPLICIT_RECALL_MISS = bool("abstainOnMiss", true);
+    EIDETIC_CONFIG.DEBUG = bool("debug", false);
+
+    const depth = configValue(n, "memoryDepth");
+    if (depth === "compact") {
+      EIDETIC_CONFIG.HOT_EVENT_LIMIT = 1200; EIDETIC_CONFIG.COLD_EVENT_LIMIT = 2400; EIDETIC_CONFIG.MAX_ANCHORS = 500;
+    } else if (depth === "standard") {
+      EIDETIC_CONFIG.HOT_EVENT_LIMIT = 2800; EIDETIC_CONFIG.COLD_EVENT_LIMIT = 5600; EIDETIC_CONFIG.MAX_ANCHORS = 800;
+    } else {
+      EIDETIC_CONFIG.HOT_EVENT_LIMIT = 4500; EIDETIC_CONFIG.COLD_EVENT_LIMIT = 9000; EIDETIC_CONFIG.MAX_ANCHORS = 1200;
+    }
+
+    const recall = configValue(n, "recallSize");
+    if (recall === "small") {
+      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS = 1800; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION = 0.08; EIDETIC_CONFIG.RECALL_MIN_CHARS = 650;
+    } else if (recall === "large") {
+      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS = 4200; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION = 0.16; EIDETIC_CONFIG.RECALL_MIN_CHARS = 1000;
+    } else {
+      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS = 3200; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION = 0.12; EIDETIC_CONFIG.RECALL_MIN_CHARS = 850;
+    }
+
+    const ac = Number(configValue(n, "activeCharacters"));
+    EIDETIC_CONFIG.MAX_ACTIVE_CHARACTERS = Number.isFinite(ac) ? Math.max(1, Math.min(8, Math.floor(ac))) : 4;
+  }
+
   function seedFromStoryCards() {
     if (typeof storyCards === "undefined" || !Array.isArray(storyCards)) return;
     const r = root();
@@ -6888,6 +7040,7 @@ const EIDETIC = (() => {
     if (!r) return;
     seedPlayerIdentity();
     seedConfiguredCharacters();
+    applyConfigCard();
     seedFromStoryCards();
     rollbackFuture(currentTurn());
     purgeDanglingRetryOutput();
@@ -6897,6 +7050,7 @@ const EIDETIC = (() => {
   function run(hook, text) {
     if (!EIDETIC_CONFIG.ENABLED) return { text: text, stop: false };
     init();
+    if (!EIDETIC_CONFIG.ENABLED) { clearFrontMemory(); return { text: text, stop: false }; }
     const r = root();
 
     if (hook === "input") {

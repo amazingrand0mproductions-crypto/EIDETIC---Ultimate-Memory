@@ -20,6 +20,15 @@ The result is continuity that feels **personal, selective, historical, and chara
 
 ---
 
+## ⚙️ Automatic Config Card
+
+EIDETIC automatically creates **🧠 EIDETIC — Config & Guide** when an Adventure starts.
+
+The card is deliberately kept out of AI context. Its **Notes** are a simple player-facing control panel explaining every setting, every automatic feature, and the optional commands. No setup card needs to be created manually and no command is required for normal operation.
+
+Edit only the values after `=` to change memory depth, recall size, strict knowledge, automatic NPC detection, narrative recall, abstention, active-character count, debug mode, or the master switch.
+
+
 ## 🧩 Deep Episodic Memory
 
 EIDETIC records story events as long-term episodic memories rather than relying entirely on recent context.
