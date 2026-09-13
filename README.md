@@ -22,11 +22,11 @@ The result is continuity that feels **personal, selective, historical, and chara
 
 ## ⚙️ Automatic Config Card
 
-EIDETIC automatically creates **🧠 EIDETIC — Config & Guide** when an Adventure starts.
+EIDETIC automatically creates **🧠 EIDETIC — Config & Guide** when an Adventure starts. No setup card, character list, or command is required for normal use.
 
-The card is deliberately kept out of AI context. Its **Notes** are a simple player-facing control panel explaining every setting, every automatic feature, and the optional commands. No setup card needs to be created manually and no command is required for normal operation.
+On runtimes that expose Story Card Notes to scripts, the settings and explanations live in the player-only **Notes** field and the Entry is kept blank. If that metadata is unavailable, EIDETIC automatically falls back to the Story Card **Entry** behind a deliberately obscure trigger so it still stays out of normal story context.
 
-Edit only the values after `=` to change memory depth, recall size, strict knowledge, automatic NPC detection, narrative recall, abstention, active-character count, debug mode, or the master switch.
+Edit only the value after `=`. The card controls the master switch, strict knowledge boundaries, automatic NPC detection, narrative recall, abstention, the Current State Ledger, memory depth, recall size, active-character count, output spacing, and debug mode. If the card cannot be created at all, the memory engine keeps running on safe defaults instead of breaking the Adventure.
 
 
 ## 🧩 Deep Episodic Memory
@@ -145,6 +145,27 @@ from
 **what is true now**.
 
 That matters for changing homes, relationships, jobs, injuries, allegiances, possessions, secrets, beliefs, identities, and long-running character arcs.
+
+---
+
+## 🧭 Knowledge-Scoped Current State
+
+Long stories need more than old-event recall. EIDETIC maintains a compact **Current State Ledger** for the newest verified state a character knows about.
+
+It can track:
+
+- location
+- role / job
+- status
+- relationship state
+- abilities
+- possessions
+- identity / codename
+- affiliation
+
+The ledger is **knowledge-scoped**. If Alice witnesses Hannah move to Willow Lane but Bob leaves before the update, Alice can know the new address while Bob can still honestly remember the older one.
+
+Rumours, questions, suspicions, and uncertain statements do not overwrite verified current state. Older states remain in episodic history instead of being erased.
 
 ---
 
@@ -270,6 +291,16 @@ Knowledge follows the scene—not the entire cast list.
 
 ---
 
+## ✍️ Clean Continuation Spacing
+
+EIDETIC can repair a missing separator between the player's text and an AI continuation, preventing joins such as:
+
+`Earl Grey blends.As the British couple...`
+
+from appearing as one broken sentence. The default `auto` mode fixes the seam only when needed; `preserve` leaves model spacing untouched.
+
+---
+
 ## 🔁 Retry, Undo & Branch Protection
 
 Discarded generations should not become memories.
@@ -356,6 +387,12 @@ This helps prevent stale memory packets from competing with newer ones during lo
 The player character is not supposed to become a second autonomous NPC copy of themselves.
 
 EIDETIC uses available character identity information to protect the protagonist from accidental NPC promotion while still allowing the system to track the people around them.
+
+---
+
+## 🛟 Failure-Safe Hook Wrappers
+
+Input, Context, and Output are wrapped defensively. If EIDETIC encounters an unexpected runtime error, the wrapper preserves the original story text instead of allowing the memory system to break the turn.
 
 ---
 

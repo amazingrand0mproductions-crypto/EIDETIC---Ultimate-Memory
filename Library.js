@@ -2,7 +2,8 @@
 const EIDETIC_CONFIG = {
   ENABLED: true,
   AUTO_CONFIG_CARD: true,
-  CONFIG_CARD_KEY: "%EIDETIC_CONFIG_5_1%",
+  CONFIG_CARD_KEY: "%__EIDETIC_CFG_A9F3C1__%",
+  OUTPUT_SPACING: "auto",
 
   SEED_CHARACTERS: [],
   ALWAYS_FOCUS: [],
@@ -53,17 +54,30 @@ const EIDETIC_CONFIG = {
   CARD_SEED_CHARS: 260,
   MAX_CARD_SEEDS: 2,
 
+  ENABLE_STATE_LEDGER: true,
+  STATE_LEDGER_LIMIT: 1800,
+  STATE_FACTS_PER_CHARACTER: 3,
+  STATE_FACT_CHARS: 280,
+
   DEBUG: false,
 };
 
 const EIDETIC = (() => {
   "use strict";
 
-  const VERSION = "5.1.0";
+  const SCHEMA_REVISION = 5;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
   const PLAYER = "@player";
+  let ROOT_CACHE_STATE = null;
+  let ROOT_CACHE_VALUE = null;
+  let ALIAS_CACHE_SIG = "";
+  let ALIAS_CACHE = null;
+  const IDENTITY_ABSOLUTE = new Set(["i","me","my","mine","myself","you","your","yours","yourself","he","him","his","himself","she","her","hers","herself","it","its","itself","we","us","our","ours","ourselves","they","them","their","theirs","themselves","eidetic"]);
+  let TOKEN_RE;
+  try { TOKEN_RE = new RegExp("[\\p{L}\\p{N}][\\p{L}\\p{N}'\\-]{1,24}", "gu"); }
+  catch (_) { TOKEN_RE = /[a-z0-9][a-z0-9'\-]{1,24}/g; }
 
   const STOPWORDS = new Set((
     "a an the and or but if then than so because as at by for from in into of on onto out over to up with without " +
@@ -5188,22 +5202,33 @@ const EIDETIC = (() => {
   ]);
 
   const PRESENCE_VERBS = [
-    "says", "asks", "replies", "whispers", "shouts", "yells", "nods", "smiles", "frowns", "laughs", "cries",
-    "looks", "watches", "stares", "turns", "walks", "steps", "moves", "sits", "stands", "leans", "reaches",
-    "takes", "gives", "grabs", "touches", "kisses", "hugs", "hits", "attacks", "follows", "enters", "arrives",
-    "appears", "joins", "answers", "speaks", "breathes", "shrugs", "winces", "glances", "gestures", "points"
+    "say","says","said","ask","asks","asked","reply","replies","replied","whisper","whispers","whispered",
+    "shout","shouts","shouted","yell","yells","yelled","nod","nods","nodded","smile","smiles","smiled",
+    "frown","frowns","frowned","laugh","laughs","laughed","cry","cries","cried","look","looks","looked",
+    "watch","watches","watched","stare","stares","stared","turn","turns","turned","walk","walks","walked",
+    "step","steps","stepped","move","moves","moved","sit","sits","sat","stand","stands","stood","lean","leans","leaned",
+    "reach","reaches","reached","take","takes","took","give","gives","gave","grab","grabs","grabbed","touch","touches","touched",
+    "kiss","kisses","kissed","hug","hugs","hugged","hit","hits","attack","attacks","attacked","follow","follows","followed",
+    "enter","enters","entered","arrive","arrives","arrived","appear","appears","appeared","join","joins","joined",
+    "answer","answers","answered","speak","speaks","spoke","breathe","breathes","breathed","shrug","shrugs","shrugged",
+    "wince","winces","winced","glance","glances","glanced","gesture","gestures","gestured","point","points","pointed",
+    "hear","hears","heard","listen","listens","listened","wait","waits","waited"
   ];
 
   const EXIT_VERBS = [
-    "leaves", "left", "exits", "departed", "departs", "walks away", "walked away", "runs away", "ran away",
-    "drives away", "hangs up", "hung up", "teleports away", "disappears", "disappeared", "goes home", "went home"
+    "leave", "leaves", "left", "exit", "exits", "exited", "depart", "departs", "departed",
+    "walk away", "walks away", "walked away", "run away", "runs away", "ran away",
+    "drive away", "drives away", "drove away", "hang up", "hangs up", "hung up",
+    "teleport away", "teleports away", "teleported away", "disappear", "disappears", "disappeared",
+    "go home", "goes home", "went home", "head home", "heads home", "headed home"
   ];
 
-  const DETECT_PROPER_PATTERN = "([A-Z][A-Za-z'\\-]+(?:\\s+[A-Z][A-Za-z'\\-]+){0,2})";
+  const DETECT_PROPER_PATTERN = "([A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ\'\\-]+(?:\\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ\'\\-]+){0,2})";
   const DETECT_PRESENCE_ALT = PRESENCE_VERBS.map(escapeRe).join("|");
   const DETECT_KIN_ALT = Array.from(DETECT_KINSHIP).map(escapeRe).sort((a,b)=>b.length-a.length).join("|");
   const DETECT_ROLE_ALT = Array.from(DETECT_PERSON_ROLES).filter(x => x.length > 1).map(escapeRe).sort((a,b)=>b.length-a.length).join("|");
   const DETECT_HUMAN_ALT = Array.from(DETECT_HUMAN_CONTEXT).map(escapeRe).sort((a,b)=>b.length-a.length).join("|");
+  const EXIT_ALT = EXIT_VERBS.map(escapeRe).sort((a,b)=>b.length-a.length).join("|");
 
   const IMPORTANCE_PATTERNS = [
     [5, /\b(dies|died|dead|death|killed|murdered|funeral|resurrected|revived)\b/i],
@@ -5223,12 +5248,12 @@ const EIDETIC = (() => {
 
   function makeFreshRoot() {
     return {
-      v: VERSION,
-      schema: 4,
+      schema: SCHEMA_REVISION,
       seq: 0,
       hot: [],
       cold: [],
       anchors: [],
+      ledger: [],
       chars: {},
       candidates: {},
       scene: {},
@@ -5237,7 +5262,7 @@ const EIDETIC = (() => {
       ambiguousFirstNames: [],
       runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "" },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
-      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0 },
+      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
     };
   }
@@ -5247,6 +5272,7 @@ const EIDETIC = (() => {
     if (!Array.isArray(r.hot)) r.hot = [];
     if (!Array.isArray(r.cold)) r.cold = [];
     if (!Array.isArray(r.anchors)) r.anchors = [];
+    if (!Array.isArray(r.ledger)) r.ledger = [];
     if (!r.chars || typeof r.chars !== "object") r.chars = {};
     if (!r.candidates || typeof r.candidates !== "object") r.candidates = {};
     if (!r.scene || typeof r.scene !== "object") r.scene = {};
@@ -5260,26 +5286,36 @@ const EIDETIC = (() => {
     if (typeof r.runtime.recallCacheKey !== "string") r.runtime.recallCacheKey = "";
     if (typeof r.runtime.recallCacheBlock !== "string") r.runtime.recallCacheBlock = "";
     if (typeof r.runtime.storyCardSig !== "string") r.runtime.storyCardSig = "";
+    if (typeof r.runtime.configGuideSig !== "string") r.runtime.configGuideSig = "";
+    if (typeof r.runtime.configCardMode !== "string") r.runtime.configCardMode = "";
+    if (typeof r.runtime.configProbePending !== "boolean") r.runtime.configProbePending = false;
+    if (typeof r.runtime.configCardWarned !== "boolean") r.runtime.configCardWarned = false;
+    if (!(typeof r.runtime.configCardId === "number" || typeof r.runtime.configCardId === "string")) r.runtime.configCardId = "";
     if (!r.stats || typeof r.stats !== "object") r.stats = {};
     if (!r.last || typeof r.last !== "object") r.last = {};
     if (!Number.isFinite(r.last.inputTurn)) r.last.inputTurn = -1;
     if (!Number.isFinite(r.last.outputTurn)) r.last.outputTurn = -1;
-    if (r.v !== VERSION) {
+    const needsSchemaMigration = (Number(r.schema) || 0) < SCHEMA_REVISION;
+    const needsColdPacking = r.cold.some(x => x && !Array.isArray(x));
+    if (needsSchemaMigration || needsColdPacking || Object.prototype.hasOwnProperty.call(r, "v")) {
       r.stats.migrations = (r.stats.migrations || 0) + 1;
       r.cold = r.cold.map(packCold).filter(Boolean);
     }
-    r.v = VERSION;
-    r.schema = 4;
+    if (Object.prototype.hasOwnProperty.call(r, "v")) delete r.v;
+    r.schema = SCHEMA_REVISION;
     r.debug = typeof r.debug === "boolean" ? r.debug : !!EIDETIC_CONFIG.DEBUG;
     return r;
   }
 
   function root() {
     if (typeof state === "undefined") return null;
+    if (ROOT_CACHE_STATE === state && ROOT_CACHE_VALUE && state[ROOT] === ROOT_CACHE_VALUE) return ROOT_CACHE_VALUE;
     let r = state[ROOT];
     if (!r || typeof r !== "object") r = makeFreshRoot();
     r = migrateRoot(r);
     state[ROOT] = r;
+    ROOT_CACHE_STATE = state;
+    ROOT_CACHE_VALUE = r;
     return r;
   }
 
@@ -5313,19 +5349,23 @@ const EIDETIC = (() => {
   }
 
   function cleanText(s) {
-    s = safeText(s)
+    return safeText(s)
       .replace(/\r/g, "")
-      .replace(/\u0000/g, "")
+      .replace(/[\u0000\u200B-\u200D\uFEFF]/g, "")
+      .replace(/\u00A0/g, " ")
       .replace(/\[\[EIDETIC_RECALL[\s\S]*?\[\[\/EIDETIC_RECALL\]\]/gi, " ")
       .replace(/\s+/g, " ")
       .trim();
-    return s;
   }
 
   function displayText(s, max) {
     s = cleanText(s).replace(/^>\s*You\s*(?:say\s*)?/i, "").trim();
+    max = Math.max(8, Number(max) || 8);
     if (s.length <= max) return s;
-    return s.slice(0, Math.max(0, max - 1)).trimEnd() + "…";
+    let cut = s.slice(0, Math.max(0, max - 1)).trimEnd();
+    const lastSpace = cut.lastIndexOf(" ");
+    if (lastSpace >= Math.floor(max * 0.72)) cut = cut.slice(0, lastSpace).trimEnd();
+    return cut + "…";
   }
 
   function hash(s) {
@@ -5382,6 +5422,8 @@ const EIDETIC = (() => {
     if (/\b(?:power|ability|magic|spell|weakness|allergy|skill|learned|can\s+[a-z]+)\b/.test(t)) add("@ability");
     if (/\b(?:gift|ring|key|letter|photo|photograph|weapon|artifact|inventory|keepsake)\b/.test(t)) add("@item");
     if (/\b(?:work|job|employed|lawyer|doctor|teacher|engineer|officer|student)\b/.test(t)) add("@role");
+    if (/\b(?:real name|known as|codename|code name|alias|nickname|identity)\b/.test(t)) add("@identity");
+    if (/\b(?:joined|member of|belongs to|works for|faction|guild|team|organization|organisation)\b/.test(t)) add("@affiliation");
     return out;
   }
 
@@ -5409,7 +5451,7 @@ const EIDETIC = (() => {
   function normName(name) {
     return safeText(name)
       .replace(/[“”"'`]/g, "")
-      .replace(/[^A-Za-z0-9\- ]+/g, " ")
+      .replace(/[^A-Za-z0-9À-ÖØ-öø-ÿĀ-ſ\- ]+/g, " ")
       .replace(/\s+/g, " ")
       .trim()
       .toLowerCase();
@@ -5425,7 +5467,7 @@ const EIDETIC = (() => {
   }
 
   function tokenList(s, limit) {
-    const words = cleanText(s).toLowerCase().match(/[a-z0-9][a-z0-9'\-]{1,24}/g) || [];
+    const words = cleanText(s).toLowerCase().match(TOKEN_RE) || [];
     const out = [];
     const seen = new Set();
     for (let i = 0; i < words.length && out.length < (limit || 24); i++) {
@@ -5457,15 +5499,14 @@ const EIDETIC = (() => {
     if (!name || name.length < 2 || name.length > 64) return false;
     const bits = nameBits(name);
     if (!bits.length || bits.length > (trusted ? 6 : 4)) return false;
-    const absolute = new Set(["i","me","my","mine","myself","you","your","yours","yourself","he","him","his","himself","she","her","hers","herself","it","its","itself","we","us","our","ours","ourselves","they","them","their","theirs","themselves","eidetic"]);
     for (let i = 0; i < bits.length; i++) {
       const raw = bits[i];
-      const b = raw.replace(/[^A-Za-z0-9\-']/g, "");
+      const b = raw.replace(/[^A-Za-z0-9À-ÖØ-öø-ÿĀ-ſ\-']/g, "");
       if (!b) return false;
-      if (absolute.has(b.toLowerCase())) return false;
+      if (IDENTITY_ABSOLUTE.has(b.toLowerCase())) return false;
       if (trusted) {
-        if (!/^[A-Za-z0-9][A-Za-z0-9'\-]*$/.test(b)) return false;
-      } else if (!/^[A-Z][A-Za-z'\-]*$/.test(b)) return false;
+        if (!/^[A-Za-z0-9À-ÖØ-öø-ÿĀ-ſ][A-Za-z0-9À-ÖØ-öø-ÿĀ-ſ'\-]*$/.test(b)) return false;
+      } else if (!/^[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]*$/.test(b)) return false;
     }
     return true;
   }
@@ -5564,7 +5605,7 @@ const EIDETIC = (() => {
     const recipient = new RegExp("\\b(?:tell|tells|told|ask|asks|asked|call|calls|called|phone|phones|phoned|text|texts|texted|hug|hugs|hugged|kiss|kisses|kissed|meet|meets|met|follow|follows|followed|help|helps|helped|thank|thanks|thanked)\\s+(?:to\\s+)?" + proper + "\\b", "gi");
     while ((m = recipient.exec(text)) !== null) add(m[1], 9, "interpersonal-recipient", true);
 
-    const generic = /\b([A-Z][a-z][A-Za-z'\-]{1,20}(?:\s+[A-Z][a-z][A-Za-z'\-]{1,20}){0,2})\b/g;
+    const generic = /\b([A-ZÀ-ÖØ-ÞĀ-Ž][a-zà-öø-ÿā-ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]{1,20}(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž][a-zà-öø-ÿā-ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]{1,20}){0,2})\b/g;
     while ((m = generic.exec(text)) !== null) add(m[1], 4, "generic-capitalized", false);
 
     const all = Object.keys(map).map(k => map[k]);
@@ -5610,7 +5651,7 @@ const EIDETIC = (() => {
     if (!key || key === PLAYER || isPlayerName(name)) return null;
     if (r.chars[key]) {
       r.chars[key].lastSource = source || r.chars[key].lastSource;
-      if (r.chars[key].aliases.indexOf(name) < 0) r.chars[key].aliases.push(name);
+      if (r.chars[key].aliases.indexOf(name) < 0 && r.chars[key].aliases.length < EIDETIC_CONFIG.MAX_ALIASES_PER_CHARACTER) r.chars[key].aliases.push(name);
       return key;
     }
     const aliasKeys = Object.keys(r.chars);
@@ -5618,7 +5659,7 @@ const EIDETIC = (() => {
       const ach = r.chars[aliasKeys[ai]];
       if (normName(ach.name) === key || (ach.aliases || []).some(a => normName(a) === key)) {
         ach.lastSource = source || ach.lastSource;
-        if (ach.aliases.indexOf(name) < 0) ach.aliases.push(name);
+        if (ach.aliases.indexOf(name) < 0 && ach.aliases.length < EIDETIC_CONFIG.MAX_ALIASES_PER_CHARACTER) ach.aliases.push(name);
         return aliasKeys[ai];
       }
     }
@@ -5636,7 +5677,7 @@ const EIDETIC = (() => {
         const existingFullAliases = (ch.aliases || []).map(normName).filter(a => a.split(" ").length > 1);
         if (incomingParts.length > 1 && existingParts.length === 1) {
           if (existingFullAliases.length && existingFullAliases.some(a => a !== key)) continue;
-          if (ch.aliases.indexOf(name) < 0) ch.aliases.push(name);
+          if (ch.aliases.indexOf(name) < 0 && ch.aliases.length < EIDETIC_CONFIG.MAX_ALIASES_PER_CHARACTER) ch.aliases.push(name);
           ch.name = name;
           ch.lastSource = source || ch.lastSource;
           return ek;
@@ -5644,7 +5685,7 @@ const EIDETIC = (() => {
         if (incomingParts.length === 1 && existingParts.length > 1) {
           const fullCandidates = existingKeys.filter(k2 => normName(r.chars[k2].name || k2).split(" ")[0] === first && normName(r.chars[k2].name || k2).split(" ").length > 1);
           if (fullCandidates.length === 1) {
-            if (ch.aliases.indexOf(name) < 0) ch.aliases.push(name);
+            if (ch.aliases.indexOf(name) < 0 && ch.aliases.length < EIDETIC_CONFIG.MAX_ALIASES_PER_CHARACTER) ch.aliases.push(name);
             ch.lastSource = source || ch.lastSource;
             return ek;
           }
@@ -5762,7 +5803,7 @@ const EIDETIC = (() => {
     const entry = normName(entryName || "");
     const firsts = [canon, entry].filter(Boolean).map(x => x.split(" ")[0]);
     if (n === canon || n === entry || (n.indexOf(" ") < 0 && firsts.indexOf(n) >= 0)) return true;
-    const displayLike = /^[A-Z0-9][A-Za-z0-9'\-]*(?:\s+[A-Z0-9][A-Za-z0-9'\-]*){0,3}$/.test(alias);
+    const displayLike = /^[A-ZÀ-ÖØ-ÞĀ-Ž0-9][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ0-9'\-]*(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž0-9][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ0-9'\-]*){0,3}$/.test(alias);
     if (!displayLike || !syntacticIdentity(alias, true) || detectionPenalty(alias) >= 8) return false;
     const entryRaw = cleanText(entryText || "");
     if (entryRaw) {
@@ -5775,108 +5816,101 @@ const EIDETIC = (() => {
   }
 
 
-  function configCardNotes() {
+  function configCardDefaults() {
+    return {
+      enabled: "on",
+      strictKnowledge: "on",
+      autoDetect: "on",
+      narrativeRecall: "on",
+      abstainOnMiss: "on",
+      currentState: "on",
+      memoryDepth: "deep",
+      recallSize: "balanced",
+      activeCharacters: "4",
+      outputSpacing: "auto",
+      debug: "off",
+    };
+  }
+
+  function configCardNotes(values) {
+    const v = Object.assign(configCardDefaults(), values || {});
     return [
       "🧠 EIDETIC — CONFIG & QUICK GUIDE",
+      "Config schema: 4",
       "",
-      "EIDETIC works automatically. You do NOT need commands, setup cards, or a character list.",
-      "This card is for simple settings and reference. Its trigger is intentionally hidden, so its Entry does not enter AI context.",
+      "EIDETIC works automatically. No setup card, commands, or character list is required.",
+      "Edit only the value after =. Settings are kept in player-only Notes when supported, with a hidden-trigger Entry fallback.",
       "",
-      "⚙️ SETTINGS — edit only the value after =",
-      "enabled = on",
-      "strictKnowledge = on",
-      "autoDetect = on",
-      "narrativeRecall = on",
-      "abstainOnMiss = on",
-      "memoryDepth = deep",
-      "recallSize = balanced",
-      "activeCharacters = 4",
-      "debug = off",
+      "⚙️ SETTINGS",
+      "enabled = " + v.enabled,
+      "strictKnowledge = " + v.strictKnowledge,
+      "autoDetect = " + v.autoDetect,
+      "narrativeRecall = " + v.narrativeRecall,
+      "abstainOnMiss = " + v.abstainOnMiss,
+      "currentState = " + v.currentState,
+      "memoryDepth = " + v.memoryDepth,
+      "recallSize = " + v.recallSize,
+      "activeCharacters = " + v.activeCharacters,
+      "outputSpacing = " + v.outputSpacing,
+      "debug = " + v.debug,
       "",
-      "📖 WHAT EACH SETTING MEANS",
-      "enabled — on/off. Master switch for EIDETIC.",
-      "strictKnowledge — Keeps private knowledge with characters who actually knew/witnessed it. Recommended: on.",
-      "autoDetect — Automatically discovers NPCs from Story Cards and story text while filtering junk. Recommended: on.",
-      "narrativeRecall — Allows useful non-private story memories to return when relevant.",
-      "abstainOnMiss — Stops explicit recall from inventing a past memory when no matching evidence exists. Recommended: on.",
-      "memoryDepth — compact / standard / deep. Controls archive capacity. Deep keeps the full 4,500 hot + 9,000 cold design.",
-      "recallSize — small / balanced / large. Controls how much recalled memory may enter active context. Balanced is recommended.",
-      "activeCharacters — 1–8. Maximum NPC memory sections considered at once. 4 is recommended.",
-      "debug — Shows extra script diagnostics. Leave off unless troubleshooting.",
+      "📖 SIMPLE GUIDE",
+      "enabled — on/off master switch.",
+      "strictKnowledge — Keeps private memories with characters who actually knew/witnessed them. Recommended: on.",
+      "autoDetect — Finds NPCs automatically while rejecting locations, objects, organizations and other junk. Recommended: on.",
+      "narrativeRecall — Allows relevant player/narrator-known history when appropriate.",
+      "abstainOnMiss — Prevents explicit recall from inventing a past memory when no evidence exists. Recommended: on.",
+      "currentState — Keeps each NPC's latest known location, role, status, relationship, ability, possession and identity while preserving older history.",
+      "memoryDepth — compact / standard / deep. Compact = 1,200 + 2,400 + 500 anchors; standard = 2,800 + 5,600 + 800; deep = 4,500 + 9,000 + 1,200.",
+      "recallSize — small / balanced / large. Smaller saves context; larger can surface more memory. Balanced is recommended.",
+      "activeCharacters — 1–8 NPC memory sections considered at once. Recommended: 4.",
+      "outputSpacing — auto repairs a missing space before AI continuation text; preserve leaves spacing untouched.",
+      "debug — Extra diagnostics. Leave off unless troubleshooting.",
       "",
       "✨ AUTOMATIC FEATURES",
-      "• Deep episodic memory with hot + cold archives",
-      "• Durable anchors for major secrets, promises, deaths, relationships and important facts",
-      "• Character-scoped knowledge and witness-aware recall",
-      "• Facts, claims, suspicions, uncertainty and unresolved questions stay distinct",
-      "• Time-aware first / previous / latest / current recall",
-      "• Smart relevance ranking instead of dumping the archive into context",
+      "• Deep hot + cold episodic memory and durable anchors",
+      "• Character-scoped knowledge, witnesses and private continuity",
+      "• Facts / claims / suspicions / uncertainty / questions stay distinct",
+      "• Knowledge-scoped current-state ledger + time-aware recall",
+      "• Smart relevance ranking and semantic tags",
       "• Detection Fortress anti-junk NPC detection",
       "• Alias, title and codename merging",
-      "• Scene presence tracking",
-      "• Retry, undo and abandoned-branch cleanup",
-      "• Repetition compression",
-      "• Character Story Card awareness",
-      "• Adaptive context budgeting and stale-recall revision protection",
+      "• Scene presence and private-thought ownership",
+      "• Retry / undo / abandoned-branch cleanup",
+      "• Repetition compression and Story Card identity awareness",
+      "• Adaptive context budgeting, revision safety and leak scrubbing",
       "",
-      "💡 NORMAL USE",
-      "Just play. EIDETIC observes the story, stores memories, and recalls relevant ones automatically.",
-      "Commands are optional tools, not required for the memory engine to work.",
+      "💡 NORMAL USE — Just play. Commands are optional.",
       "",
       "🛠️ OPTIONAL COMMANDS",
-      "/eidetic or /memory — quick status/help",
-      "/memstats — archive statistics",
-      "/memdetect — character detection status",
-      "/roster — tracked NPCs",
-      "/focus Alice — temporarily prioritize Alice",
-      "/focus auto — return to automatic focus",
-      "/remember Alice | fact — permanently anchor a creator-confirmed memory",
-      "/recall Alice | topic — inspect recall for a topic",
-      "/memdebug on/off — diagnostics",
-      "/memclear CONFIRM — erase EIDETIC memory",
+      "/eidetic or /memory — quick status   /memstats — archive statistics",
+      "/memdetect — detection status   /roster — tracked NPCs",
+      "/focus Alice — prioritize Alice   /focus auto — automatic focus",
+      "/remember Alice | fact — pin a creator-confirmed memory",
+      "/recall Alice | topic — inspect matching memory",
+      "/memdebug on/off — diagnostics   /memclear CONFIRM — erase EIDETIC memory",
       "",
-      "⚠️ Keep the setting names unchanged. If a value is invalid, EIDETIC safely falls back to its default."
+      "⚠️ Keep setting names unchanged. Invalid values safely fall back to defaults."
     ].join("\n");
   }
 
   function findConfigCardIndex() {
     if (typeof storyCards === "undefined" || !Array.isArray(storyCards)) return -1;
+    const r = root();
+    const savedId = r && r.runtime ? r.runtime.configCardId : "";
+    if (savedId !== "" && savedId != null) {
+      for (let i = 0; i < storyCards.length; i++) if (storyCards[i] && String(storyCards[i].id) === String(savedId)) return i;
+    }
     const wanted = safeText(EIDETIC_CONFIG.CONFIG_CARD_KEY);
+    const legacy = new Set([wanted, "%EIDETIC_CONFIG%", "%EIDETIC_CONFIG_5_1%", "%EIDETIC_CONFIG_6%"]);
     for (let i = 0; i < storyCards.length; i++) {
       const c = storyCards[i] || {};
       const keys = Array.isArray(c.keys) ? c.keys.join(",") : safeText(c.keys);
-      if (keys.split(",").map(x => x.trim()).indexOf(wanted) >= 0) return i;
+      const pieces = keys.split(/[,;|]/).map(x => x.trim());
+      if (pieces.some(x => legacy.has(x))) return i;
       if (safeText(c.title) === "🧠 EIDETIC — Config & Guide") return i;
     }
     return -1;
-  }
-
-  function ensureConfigCard() {
-    if (!EIDETIC_CONFIG.AUTO_CONFIG_CARD || typeof storyCards === "undefined" || !Array.isArray(storyCards)) return null;
-    let idx = findConfigCardIndex();
-    if (idx < 0 && typeof addStoryCard === "function") {
-      try {
-        addStoryCard(EIDETIC_CONFIG.CONFIG_CARD_KEY, "", "Custom");
-        idx = findConfigCardIndex();
-        if (idx < 0) {
-          for (let i = storyCards.length - 1; i >= 0; i--) {
-            const c = storyCards[i] || {};
-            const keys = Array.isArray(c.keys) ? c.keys.join(",") : safeText(c.keys);
-            if (keys.indexOf(EIDETIC_CONFIG.CONFIG_CARD_KEY) >= 0) { idx = i; break; }
-          }
-        }
-      } catch (_) {}
-    }
-    if (idx < 0 || !storyCards[idx]) return null;
-    const c = storyCards[idx];
-    c.type = "Custom";
-    c.title = "🧠 EIDETIC — Config & Guide";
-    c.entry = "";
-    c.keys = EIDETIC_CONFIG.CONFIG_CARD_KEY;
-    if (typeof c.description !== "string" || !/EIDETIC — CONFIG & QUICK GUIDE/.test(c.description)) {
-      c.description = configCardNotes();
-    }
-    return c;
   }
 
   function configValue(notes, key) {
@@ -5884,44 +5918,159 @@ const EIDETIC = (() => {
     return m ? m[1].trim().toLowerCase() : "";
   }
 
+  function configCardValues(notes) {
+    const d = configCardDefaults(), out = {};
+    Object.keys(d).forEach(k => { const v = configValue(notes, k); out[k] = v || d[k]; });
+    return out;
+  }
+
+  function configNotesSource(c) {
+    if (!c || typeof c !== "object") return "";
+    const fields = ["description", "notes"];
+    for (let i = 0; i < fields.length; i++) {
+      const v = safeText(c[fields[i]]);
+      if (/EIDETIC — CONFIG & QUICK GUIDE/.test(v)) return v;
+    }
+    return "";
+  }
+
+  function configGuideSource(c) {
+    const r = root();
+    const fields = [];
+    ["description", "notes", "entry", "value"].forEach(field => {
+      const v = safeText(c && c[field]);
+      if (/EIDETIC — CONFIG & QUICK GUIDE/.test(v)) fields.push(v);
+    });
+    if (!fields.length) return "";
+    const prior = r && r.runtime ? safeText(r.runtime.configGuideSig) : "";
+    if (prior) {
+      for (let i = 0; i < fields.length; i++) if (hash(fields[i]) !== prior) return fields[i];
+    }
+    return fields[0];
+  }
+
+  function tryWriteConfigNotes(c, guide) {
+    if (!c || typeof c !== "object") return false;
+    try { c.description = guide; } catch (_) {}
+    try { c.notes = guide; } catch (_) {}
+    return /EIDETIC — CONFIG & QUICK GUIDE/.test(safeText(c.description)) ||
+      /EIDETIC — CONFIG & QUICK GUIDE/.test(safeText(c.notes));
+  }
+
+  function warnConfigCardUnavailable() {
+    const r = root();
+    if (!r || !r.runtime || r.runtime.configCardWarned) return;
+    r.runtime.configCardWarned = true;
+    const msg = "EIDETIC is running, but its Config & Guide card could not be created. Enable Story Cards/Memory Bank if you want the in-game settings card.";
+    if (typeof state !== "undefined" && state && !safeText(state.message)) setMessage(msg);
+    else debugLog(msg);
+  }
+
+  function ensureConfigCard() {
+    if (!EIDETIC_CONFIG.AUTO_CONFIG_CARD || typeof storyCards === "undefined" || !Array.isArray(storyCards)) return null;
+    const r = root();
+    let idx = findConfigCardIndex();
+    let created = false;
+    if (idx < 0 && typeof addStoryCard === "function") {
+      try {
+        const made = addStoryCard(EIDETIC_CONFIG.CONFIG_CARD_KEY, configCardNotes(), "Custom");
+        created = made !== false;
+        if (Number.isInteger(made) && made >= 0 && made < storyCards.length) idx = made;
+        if (idx < 0) idx = findConfigCardIndex();
+      } catch (_) {}
+    }
+    if (idx < 0 || !storyCards[idx]) {
+      warnConfigCardUnavailable();
+      return null;
+    }
+
+    const c = storyCards[idx];
+    if (r && r.runtime && c.id != null) r.runtime.configCardId = c.id;
+    const persistedNotesBeforeWrite = configNotesSource(c);
+    if (r && r.runtime) {
+      if (persistedNotesBeforeWrite) {
+        r.runtime.configCardMode = "notes";
+        r.runtime.configProbePending = false;
+      } else if (r.runtime.configProbePending) {
+        r.runtime.configCardMode = "entry";
+        r.runtime.configProbePending = false;
+      }
+    }
+
+    const source = configGuideSource(c);
+    const values = configCardValues(source);
+    const guide = configCardNotes(values);
+    c.type = "Custom";
+    try { c.title = "🧠 EIDETIC — Config & Guide"; } catch (_) {}
+    c.keys = EIDETIC_CONFIG.CONFIG_CARD_KEY;
+
+    tryWriteConfigNotes(c, guide);
+    if ("value" in c) {
+      try { c.value = (r && r.runtime && r.runtime.configCardMode === "notes") ? "" : guide; } catch (_) {}
+    }
+
+    if (r && r.runtime) {
+      if (created && !r.runtime.configCardMode) {
+        c.entry = guide;
+        r.runtime.configProbePending = true;
+      } else if (r.runtime.configCardMode === "notes") {
+        c.entry = "";
+      } else {
+        c.entry = guide;
+      }
+      r.runtime.configGuideSig = hash(guide);
+      r.runtime.configCardWarned = false;
+    } else {
+      c.entry = guide;
+    }
+    return c;
+  }
+
+  function setConfigValueInCard(key, value) {
+    const c = ensureConfigCard();
+    if (!c) return false;
+    const re = new RegExp("^(\\s*" + escapeRe(key) + "\\s*=\\s*)[^\\r\\n#]+", "im");
+    let changed = false;
+    ["description", "notes", "entry", "value"].forEach(field => {
+      if (typeof c[field] === "string" && re.test(c[field])) {
+        c[field] = c[field].replace(re, "$1" + safeText(value));
+        changed = true;
+      }
+    });
+    const r = root();
+    const source = configGuideSource(c);
+    if (r && r.runtime && source) r.runtime.configGuideSig = hash(source);
+    return changed;
+  }
+
   function applyConfigCard() {
     const c = ensureConfigCard();
     if (!c) return;
-    const n = safeText(c.description);
+    const r = root();
+    const n = configGuideSource(c) || safeText(c.entry);
     const on = v => /^(on|true|yes|1|enabled)$/.test(v);
     const off = v => /^(off|false|no|0|disabled)$/.test(v);
-    const bool = (key, fallback) => {
-      const v = configValue(n, key);
-      return on(v) ? true : off(v) ? false : fallback;
-    };
-
+    const bool = (key, fallback) => { const v = configValue(n,key); return on(v) ? true : off(v) ? false : fallback; };
     EIDETIC_CONFIG.ENABLED = bool("enabled", true);
     EIDETIC_CONFIG.STRICT_KNOWLEDGE = bool("strictKnowledge", true);
     EIDETIC_CONFIG.AUTO_DISCOVER_CHARACTERS = bool("autoDetect", true);
     EIDETIC_CONFIG.ENABLE_NARRATIVE_RECALL = bool("narrativeRecall", true);
     EIDETIC_CONFIG.ABSTAIN_ON_EXPLICIT_RECALL_MISS = bool("abstainOnMiss", true);
+    EIDETIC_CONFIG.ENABLE_STATE_LEDGER = bool("currentState", true);
     EIDETIC_CONFIG.DEBUG = bool("debug", false);
-
-    const depth = configValue(n, "memoryDepth");
-    if (depth === "compact") {
-      EIDETIC_CONFIG.HOT_EVENT_LIMIT = 1200; EIDETIC_CONFIG.COLD_EVENT_LIMIT = 2400; EIDETIC_CONFIG.MAX_ANCHORS = 500;
-    } else if (depth === "standard") {
-      EIDETIC_CONFIG.HOT_EVENT_LIMIT = 2800; EIDETIC_CONFIG.COLD_EVENT_LIMIT = 5600; EIDETIC_CONFIG.MAX_ANCHORS = 800;
-    } else {
-      EIDETIC_CONFIG.HOT_EVENT_LIMIT = 4500; EIDETIC_CONFIG.COLD_EVENT_LIMIT = 9000; EIDETIC_CONFIG.MAX_ANCHORS = 1200;
-    }
-
-    const recall = configValue(n, "recallSize");
-    if (recall === "small") {
-      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS = 1800; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION = 0.08; EIDETIC_CONFIG.RECALL_MIN_CHARS = 650;
-    } else if (recall === "large") {
-      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS = 4200; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION = 0.16; EIDETIC_CONFIG.RECALL_MIN_CHARS = 1000;
-    } else {
-      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS = 3200; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION = 0.12; EIDETIC_CONFIG.RECALL_MIN_CHARS = 850;
-    }
-
-    const ac = Number(configValue(n, "activeCharacters"));
-    EIDETIC_CONFIG.MAX_ACTIVE_CHARACTERS = Number.isFinite(ac) ? Math.max(1, Math.min(8, Math.floor(ac))) : 4;
+    const spacing = configValue(n,"outputSpacing");
+    EIDETIC_CONFIG.OUTPUT_SPACING = spacing === "preserve" ? "preserve" : "auto";
+    const depth = configValue(n,"memoryDepth");
+    if (depth === "compact") { EIDETIC_CONFIG.HOT_EVENT_LIMIT=1200; EIDETIC_CONFIG.COLD_EVENT_LIMIT=2400; EIDETIC_CONFIG.MAX_ANCHORS=500; }
+    else if (depth === "standard") { EIDETIC_CONFIG.HOT_EVENT_LIMIT=2800; EIDETIC_CONFIG.COLD_EVENT_LIMIT=5600; EIDETIC_CONFIG.MAX_ANCHORS=800; }
+    else { EIDETIC_CONFIG.HOT_EVENT_LIMIT=4500; EIDETIC_CONFIG.COLD_EVENT_LIMIT=9000; EIDETIC_CONFIG.MAX_ANCHORS=1200; }
+    const recall = configValue(n,"recallSize");
+    if (recall === "small") { EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS=1800; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION=0.08; EIDETIC_CONFIG.RECALL_MIN_CHARS=650; }
+    else if (recall === "large") { EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS=4200; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION=0.16; EIDETIC_CONFIG.RECALL_MIN_CHARS=1000; }
+    else { EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS=3200; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION=0.12; EIDETIC_CONFIG.RECALL_MIN_CHARS=850; }
+    const ac=Number(configValue(n,"activeCharacters"));
+    EIDETIC_CONFIG.MAX_ACTIVE_CHARACTERS=Number.isFinite(ac)?Math.max(1,Math.min(8,Math.floor(ac))):4;
+    if (r) r.debug=EIDETIC_CONFIG.DEBUG;
   }
 
   function seedFromStoryCards() {
@@ -5932,24 +6081,29 @@ const EIDETIC = (() => {
       const c = storyCards[i] || {};
       const type = safeText(c.type).toLowerCase();
       if (!/character|npc|person|people|cast/.test(type)) continue;
-      sigParts.push(safeText(c.id) + "|" + type + "|" + safeText(c.keys) + "|" + cleanText(c.entry));
+      const entryForSig = cleanText(c.entry != null ? c.entry : c.value);
+      sigParts.push(safeText(c.id) + "|" + type + "|" + safeText(c.title) + "|" + safeText(c.keys) + "|" + entryForSig);
     }
     const sig = hash(sigParts.join("\u001e"));
     if (r && r.runtime && r.runtime.storyCardSig === sig) return;
     for (let i = 0; i < storyCards.length; i++) {
       const c = storyCards[i] || {};
       const type = safeText(c.type).toLowerCase();
-      const entry = cleanText(c.entry);
+      const entry = cleanText(c.entry != null ? c.entry : c.value);
       const rawKeys = splitKeys(c.keys).map(x => safeText(x).trim()).filter(Boolean);
       const characterish = /character|npc|person|people|cast/.test(type);
       if (!characterish) continue;
 
-      const entryName = entry.match(/^(?:name\s*[:=-]\s*)?([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,2})(?:\s+is\b|\s*[,;:\-])/);
+      const entryName = entry.match(/^(?:name\s*[:=-]\s*)?([A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+){0,2})(?:\s+is\b|\s*[,;:\-])/);
+      const titleName = safeText(c.title).trim();
       let canonical = "";
-      for (let j = 0; j < rawKeys.length; j++) {
-        if (isPlausibleName(rawKeys[j], true)) { canonical = rawKeys[j]; break; }
+      if (entryName && isPlausibleName(entryName[1], true)) canonical = entryName[1];
+      else if (titleName && isPlausibleName(titleName, true) && detectionPenalty(titleName) < 8) canonical = titleName;
+      else {
+        for (let j = 0; j < rawKeys.length; j++) {
+          if (isPlausibleName(rawKeys[j], true) && detectionPenalty(rawKeys[j]) < 8) { canonical = rawKeys[j]; break; }
+        }
       }
-      if (!canonical && entryName && isPlausibleName(entryName[1], true)) canonical = entryName[1];
       if (!canonical || isPlayerName(canonical)) continue;
       let charKey = ensureChar(canonical, entryName ? "story-card-entry" : "story-card", true);
       if (!charKey) continue;
@@ -5978,38 +6132,64 @@ const EIDETIC = (() => {
     pruneNameCandidates();
   }
 
+  function aliasIndex() {
+    const r = root();
+    if (!r) return { map: Object.create(null), patterns: [] };
+    const keys = Object.keys(r.chars).sort();
+    const sigParts = [];
+    for (let i = 0; i < keys.length; i++) {
+      const ch = r.chars[keys[i]] || {};
+      sigParts.push(keys[i] + ":" + (ch.aliases || [ch.name]).map(normName).join(","));
+    }
+    const sig = hash(sigParts.join("|"));
+    if (ALIAS_CACHE && ALIAS_CACHE_SIG === sig) return ALIAS_CACHE;
+    const map = Object.create(null), patterns = [];
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i], ch = r.chars[key] || {};
+      const aliases = Array.isArray(ch.aliases) && ch.aliases.length ? ch.aliases : [ch.name];
+      for (let j = 0; j < aliases.length; j++) {
+        const raw = safeText(aliases[j]).trim();
+        const n = normName(raw);
+        if (!raw || !n) continue;
+        if (map[n] == null) map[n] = key;
+        patterns.push({
+          key,
+          len: raw.length,
+          re: new RegExp("(^|[^A-Za-z0-9À-ÖØ-öø-ÿĀ-ſ])" + escapeRe(raw) + "([^A-Za-z0-9À-ÖØ-öø-ÿĀ-ſ]|$)", "i")
+        });
+      }
+    }
+    patterns.sort((a,b) => b.len - a.len);
+    ALIAS_CACHE_SIG = sig;
+    ALIAS_CACHE = { map, patterns };
+    return ALIAS_CACHE;
+  }
+
   function namesMentioned(text) {
     const r = root();
     if (!r) return [];
-    const out = [];
-    const lower = safeText(text).toLowerCase();
-    const keys = Object.keys(r.chars);
-    for (let i = 0; i < keys.length; i++) {
-      const key = keys[i];
-      const ch = r.chars[key];
-      const aliases = Array.isArray(ch.aliases) ? ch.aliases : [ch.name];
-      for (let j = 0; j < aliases.length; j++) {
-        const a = safeText(aliases[j]).toLowerCase();
-        if (!a) continue;
-        const re = new RegExp("(^|[^a-z0-9])" + escapeRe(a) + "([^a-z0-9]|$)", "i");
-        if (re.test(lower)) {
-          out.push(key);
-          break;
-        }
-      }
+    const out = [], seen = new Set();
+    const raw = safeText(text);
+    const idx = aliasIndex();
+    for (let i = 0; i < idx.patterns.length; i++) {
+      const p = idx.patterns[i];
+      if (seen.has(p.key)) continue;
+      if (p.re.test(raw)) { seen.add(p.key); out.push(p.key); }
     }
     return out;
   }
 
   function presenceEvidence(name, text) {
     const n = escapeRe(name);
-    const v = PRESENCE_VERBS.join("|");
+    const v = PRESENCE_VERBS.map(escapeRe).join("|");
+    const person = "[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+(?:\\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+){0,2}";
+    const coordinated = "(?:(?:\\s*,\\s*(?:and\\s+)?|\\s+and\\s+|\\s*&\\s*)" + person + "){0,3}";
     const patterns = [
+      new RegExp("\\b" + n + "\\b" + coordinated + "\\s+(?:" + v + ")\\b", "i"),
       new RegExp("\\b" + n + "\\s+(?:" + v + ")\\b", "i"),
       new RegExp("\\b(?:with|beside|next to|toward|towards|at|near)\\s+" + n + "\\b", "i"),
-      new RegExp("\\b" + n + "\\s+(?:enters|arrives|appears|joins|returns)\\b", "i"),
-      new RegExp("\\b(?:tell|tells|told|ask|asks|asked|show|shows|showed|give|gives|gave|hand|hands|handed|call|calls|called|phone|phones|phoned|meet|meets|met|hug|hugs|hugged|kiss|kisses|kissed|hit|hits|attacks?)\\s+(?:to\\s+)?" + n + "\\b", "i"),
-      new RegExp("[\"”][^\"”]{1,220}[\"”][,.!?]?\\s*" + n + "\\s+(?:says|asks|replies|whispers|answers)", "i")
+      new RegExp("\\b(?:tell|tells|told|ask|asks|asked|show|shows|showed|give|gives|gave|hand|hands|handed|call|calls|called|phone|phones|phoned|meet|meets|met|hug|hugs|hugged|kiss|kisses|kissed|hit|hits|attacks?|attacked)\\s+(?:to\\s+)?" + n + "\\b", "i"),
+      new RegExp("[\"”][^\"”]{1,220}[\"”][,.!?]?\\s*" + n + "\\s+(?:says|said|asks|asked|replies|replied|whispers|whispered|answers|answered)", "i")
     ];
     for (let i = 0; i < patterns.length; i++) if (patterns[i].test(text)) return true;
     return false;
@@ -6017,10 +6197,10 @@ const EIDETIC = (() => {
 
   function exitEvidence(name, text) {
     const n = escapeRe(name);
-    for (let i = 0; i < EXIT_VERBS.length; i++) {
-      if (new RegExp("\\b" + n + "\\s+" + escapeRe(EXIT_VERBS[i]) + "\\b", "i").test(text)) return true;
-    }
-    return false;
+    const person = "[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+(?:\\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+){0,2}";
+    const coordinated = "(?:(?:\\s*,\\s*(?:and\\s+)?|\\s+and\\s+|\\s*&\\s*)" + person + "){0,3}";
+    return new RegExp("\\b" + n + "\\b" + coordinated + "\\s+(?:" + EXIT_ALT + ")\\b", "i").test(text) ||
+      new RegExp("\\b" + n + "\\s+(?:" + EXIT_ALT + ")\\b", "i").test(text);
   }
 
   function sceneResetEvidence(text) {
@@ -6048,8 +6228,9 @@ const EIDETIC = (() => {
     const r = root();
     if (!r) return null;
     const patterns = [
-      /^([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,2})\s+(?:thinks|thought|wonders|believes|suspects|remembers)\b/i,
-      /\b(?:inside|within)\s+([A-Z][A-Za-z'\-]+(?:\s+[A-Z][A-Za-z'\-]+){0,2})['’]s\s+(?:mind|head)\b/i
+      /^([A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+){0,2})\s+(?:thinks|thought|wonders|believes|suspects|remembers|hopes|fears|imagines)\b/i,
+      /^([A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+){0,2})\b[^.!?]{0,90}\b(?:thinks? to (?:himself|herself|themself|themselves)|silently thinks?|privately believes?|keeps? .{0,45} to (?:himself|herself|themself|themselves))\b/i,
+      /\b(?:inside|within)\s+([A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+){0,2})['’]s\s+(?:mind|head)\b/i
     ];
     for (let i = 0; i < patterns.length; i++) {
       const m = cleanText(text).match(patterns[i]);
@@ -6085,12 +6266,16 @@ const EIDETIC = (() => {
     return mentioned;
   }
 
-  function activeCharacters(query) {
+  function activeCharacters(query, plan) {
     const r = root();
     if (!r) return [];
     const turn = currentTurn();
     const ranked = [];
     const explicit = new Set(participantKeys(query));
+    if (plan && plan.explicitRecall) {
+      const requested = Array.isArray(plan.names) ? plan.names : namesMentioned(query);
+      for (let i = 0; i < requested.length; i++) explicit.add(requested[i]);
+    }
     const always = [].concat(EIDETIC_CONFIG.ALWAYS_FOCUS || [], r.manualFocus || []);
     for (let i = 0; i < always.length; i++) {
       const key = getCharKey(always[i]) || normName(always[i]);
@@ -6151,6 +6336,121 @@ const EIDETIC = (() => {
       }
     }
     return out;
+  }
+
+  const STATE_SLOT_TAG = { location:"@location", role:"@role", status:"@status", relationship:"@relationship", ability:"@ability", possession:"@item", identity:"@identity", affiliation:"@affiliation" };
+
+  function stateSlotsForCharacter(text, charKey) {
+    const r = root(), ch = r && r.chars[charKey];
+    if (!ch) return [];
+    const aliases = (ch.aliases && ch.aliases.length ? ch.aliases : [ch.name]).slice().sort((a,b)=>b.length-a.length);
+    const out = [];
+    const add = slot => { if (out.indexOf(slot) < 0) out.push(slot); };
+    for (let i = 0; i < aliases.length; i++) {
+      const a = escapeRe(aliases[i]);
+      const lead = "(?:^|[^A-Za-z0-9])" + a + "(?:[^A-Za-z0-9]|$)";
+      if (new RegExp(lead + "[^.!?]{0,42}\\b(?:lives?|resides?|stays?)\\s+(?:in|at|on|near|with)\\b|" + lead + "[^.!?]{0,42}\\b(?:moved|moves|relocated)\\s+(?:to|into|back to)\\b|" + lead + "[^.!?]{0,42}\\bis\\s+(?:now\\s+|currently\\s+)?(?:based|located)\\s+(?:in|at|on|near)\\b", "i").test(text)) add("location");
+      if (new RegExp(lead + "[^.!?]{0,36}\\b(?:works?|serves?)\\s+as\\b|" + lead + "[^.!?]{0,36}\\b(?:became|becomes|is|remains)\\s+(?:an?\\s+)?(?:" + DETECT_ROLE_ALT + ")\\b", "i").test(text)) add("role");
+      if (new RegExp(lead + "[^.!?]{0,34}\\b(?:is|was|became|becomes|remains|has become)\\s+(?:now\\s+|currently\\s+|still\\s+)?(?:dead|alive|injured|wounded|pregnant|missing|unconscious|awake|ill|sick|healthy|retired|imprisoned|incarcerated|hospitalized|hospitalised)\\b|" + lead + "[^.!?]{0,24}\\b(?:dies|died|recovered|recovers)\\b", "i").test(text)) add("status");
+      if (new RegExp(lead + "[^.!?]{0,42}\\b(?:is|became|becomes|remains)\\s+(?:now\\s+|currently\\s+)?(?:married to|dating|engaged to|friends with|estranged from|divorced from|separated from|in a relationship with)\\b", "i").test(text)) add("relationship");
+      if (/\b(?:power|ability|magic|spell|teleport|telepathy|telekinesis|phasing?|gravity|electro|electric|superhuman|superpower|powers)\b/i.test(text) && new RegExp(lead + "[^.!?]{0,36}\\b(?:can|cannot|can't|is able to|is unable to|has (?:the |an? )?(?:power|ability)|lost (?:the |an? )?(?:power|ability)|gained (?:the |an? )?(?:power|ability))\\b", "i").test(text)) add("ability");
+      if (semanticTags(text).indexOf("@item") >= 0 && new RegExp(lead + "[^.!?]{0,30}\\b(?:owns?|keeps?|possesses?|has|carries)\\b", "i").test(text)) add("possession");
+      if (new RegExp(lead + "[^.!?]{0,40}\\b(?:real name is|is known as|codename is|code name is|alias is|goes by)\\b", "i").test(text)) add("identity");
+      if (new RegExp(lead + "[^.!?]{0,40}\\b(?:joined|joins|is a member of|belongs to|works for)\\b|" + lead + "[^.!?]{0,32}\\b(?:left|leaves)\\s+(?:the\\s+)?(?:team|guild|company|organization|organisation|agency|department|faction|group)\\b", "i").test(text)) add("affiliation");
+      if (out.length >= 4) break;
+    }
+    return out;
+  }
+
+  function pruneStateLedger() {
+    const r = root();
+    if (!r || !Array.isArray(r.ledger)) return;
+    const limit = Math.max(100, Number(EIDETIC_CONFIG.STATE_LEDGER_LIMIT) || 1800);
+    if (r.ledger.length <= limit) return;
+    const seen = new Set(), keep = new Array(r.ledger.length).fill(true);
+    for (let i = r.ledger.length - 1; i >= 0; i--) {
+      const e = r.ledger[i] || {}, owners = Array.isArray(e.owners) ? e.owners : [];
+      if (e.manual) { for (let j=0;j<owners.length;j++) seen.add(owners[j]+"|"+e.subject+"|"+e.slot); continue; }
+      let useful = false;
+      for (let j = 0; j < owners.length; j++) {
+        const k = owners[j] + "|" + e.subject + "|" + e.slot;
+        if (!seen.has(k)) { useful = true; seen.add(k); }
+      }
+      if (!useful) keep[i] = false;
+    }
+    let remove = r.ledger.length - limit;
+    if (remove > 0) {
+      for (let i = 0; i < keep.length && remove > 0; i++) if (!keep[i]) { keep[i] = null; remove--; }
+      for (let i = 0; i < keep.length && remove > 0; i++) if (keep[i] === true && !(r.ledger[i] && r.ledger[i].manual)) { keep[i] = null; remove--; }
+      const before = r.ledger.length;
+      r.ledger = r.ledger.filter((_,i) => keep[i] !== null);
+      r.stats.statePruned = Number(r.stats.statePruned || 0) + (before - r.ledger.length);
+    }
+  }
+
+  function addStateFacts(text, owners, turn, kind, sourceHash, mode, manual) {
+    if (!EIDETIC_CONFIG.ENABLE_STATE_LEDGER) return;
+    const r = root();
+    if (!r || (mode !== "event" && mode !== "player-event") || /\b(?:asks?|asked|wonders?|wondered|if|whether|maybe|perhaps|possibly|might|could have)\b/i.test(text)) return;
+    const subjects = namesMentioned(text);
+    if (!subjects.length) return;
+    const ownerArray = Array.from(owners || [PLAYER]);
+    for (let si = 0; si < subjects.length; si++) {
+      const subject = subjects[si], slots = stateSlotsForCharacter(text, subject);
+      for (let sj = 0; sj < slots.length; sj++) {
+        const slot = slots[sj], shown = displayText(text, EIDETIC_CONFIG.STATE_FACT_CHARS);
+        const fp = hash(slot + "|" + subject + "|" + shown.toLowerCase());
+        let same = false;
+        for (let i = r.ledger.length - 1, scanned = 0; i >= 0 && scanned < 120; i--, scanned++) {
+          const old = r.ledger[i];
+          if (!old || old.subject !== subject || old.slot !== slot) continue;
+          const shared = (old.owners || []).some(o => ownerArray.indexOf(o) >= 0);
+          if (shared && old.fp === fp) { same = true; break; }
+        }
+        if (same) continue;
+        r.ledger.push({ id:"s"+(++r.seq), turn, kind, text:shown, owners:ownerArray.slice(), subject, slot, k:tokenList(shown,20).concat(semanticTags(shown)).filter((x,i,a)=>a.indexOf(x)===i).join("|"), src:sourceHash, fp, manual:!!manual });
+        r.stats.stateFacts = Number(r.stats.stateFacts || 0) + 1;
+      }
+    }
+    pruneStateLedger();
+  }
+
+  function stateFactOwnerAllows(e, owner) {
+    if (!EIDETIC_CONFIG.STRICT_KNOWLEDGE) return true;
+    return !!(e && Array.isArray(e.owners) && (e.owners.indexOf(owner) >= 0 || e.owners.indexOf("*") >= 0));
+  }
+
+  function retrieveCurrentState(owner, plan, limit) {
+    const r = root();
+    if (!r || !EIDETIC_CONFIG.ENABLE_STATE_LEDGER || !Array.isArray(r.ledger)) return [];
+    const wantedSubjects = new Set((plan.names || []).concat(owner ? [owner] : []));
+    const wantedSlots = new Set();
+    for (let slot in STATE_SLOT_TAG) if ((plan.tags || []).indexOf(STATE_SLOT_TAG[slot]) >= 0) wantedSlots.add(slot);
+    const picked = [], seen = new Set(), lexical = plan.lexicalTokens || [];
+    for (let i = r.ledger.length - 1; i >= 0; i--) {
+      const e = r.ledger[i];
+      if (!e || !stateFactOwnerAllows(e, owner)) continue;
+      if (wantedSubjects.size && !wantedSubjects.has(e.subject)) continue;
+      const key = e.subject + "|" + e.slot;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const tagMatch = wantedSlots.size ? wantedSlots.has(e.slot) : false;
+      const kw = "|" + safeText(e.k) + "|";
+      let lexicalMatches = 0;
+      for (let li=0; li<lexical.length; li++) {
+        const vars = plan.variants && plan.variants[lexical[li]] ? plan.variants[lexical[li]] : lexicalVariants(lexical[li]);
+        for (let vi=0; vi<vars.length; vi++) if (kw.indexOf("|"+vars[vi]+"|") >= 0) { lexicalMatches++; break; }
+      }
+      const subjectMatch = (plan.names || []).indexOf(e.subject) >= 0 || e.subject === owner;
+      if (plan.currentStateLookup && wantedSlots.size && !tagMatch) continue;
+      if ((plan.explicitRecall || plan.currentStateLookup) && !tagMatch && lexicalMatches === 0 && !subjectMatch) continue;
+      if (!plan.explicitRecall && !plan.currentStateLookup && !tagMatch && lexicalMatches === 0) continue;
+      const age = Math.max(0, currentTurn() - Number(e.turn || 0));
+      const score = 8 + (tagMatch ? 6 : 0) + lexicalMatches * 2.4 + (subjectMatch ? 2 : 0) + 2 / Math.sqrt(1 + age / 20);
+      picked.push({ e, score });
+    }
+    picked.sort((a,b)=>b.score-a.score || Number(b.e.turn||0)-Number(a.e.turn||0));
+    return picked.slice(0, Math.max(1, limit || EIDETIC_CONFIG.STATE_FACTS_PER_CHARACTER)).map(x=>x.e);
   }
 
   function anchorEligible(text, mode) {
@@ -6271,13 +6571,14 @@ const EIDETIC = (() => {
     const lastTurn = r.last && Number.isFinite(r.last.turn) ? r.last.turn : null;
     if (lastTurn != null && turn >= lastTurn) return;
 
-    const before = r.hot.length + r.cold.length + r.anchors.length;
+    const before = r.hot.length + r.cold.length + r.anchors.length + r.ledger.length;
     r.hot = r.hot.filter(e => (e.turn || 0) <= turn || e.manual);
     r.cold = r.cold.filter(e => recTurn(e) <= turn || recManual(e));
     r.anchors = r.anchors.filter(e => (e.turn || 0) <= turn || e.manual);
+    r.ledger = r.ledger.filter(e => (Number(e && e.turn) || 0) <= turn || (e && e.manual));
     const sceneKeys = Object.keys(r.scene);
     for (let i = 0; i < sceneKeys.length; i++) if (r.scene[sceneKeys[i]] > turn) delete r.scene[sceneKeys[i]];
-    const after = r.hot.length + r.cold.length + r.anchors.length;
+    const after = r.hot.length + r.cold.length + r.anchors.length + r.ledger.length;
     if (after < before) r.stats.undos = (r.stats.undos || 0) + 1;
     if ((r.last.outputTurn || -1) > turn) { r.last.outputTurn = -1; r.last.outputHash = ""; }
     if ((r.last.inputTurn || -1) > turn) { r.last.inputTurn = -1; r.last.inputHash = ""; }
@@ -6324,6 +6625,11 @@ const EIDETIC = (() => {
       const at = Number(a && a.turn) || 0;
       if (at < turn) break;
       if (!a.manual && at === turn && a.src === kind) r.anchors.splice(i, 1);
+    }
+    for (let i = r.ledger.length - 1; i >= 0; i--) {
+      const e = r.ledger[i], et = Number(e && e.turn) || 0;
+      if (et < turn) break;
+      if (e && !e.manual && et === turn && e.kind === kind) { r.ledger.splice(i, 1); removed++; }
     }
     return removed;
   }
@@ -6423,6 +6729,7 @@ const EIDETIC = (() => {
 
         if (anchorEligible(c, mode)) addAnchor(c, owners, turn, kind, false, mode, names, subjects);
       }
+      addStateFacts(c, owners, turn, kind, srcHash, mode, false);
 
       updateScene(c);
     }
@@ -6451,6 +6758,9 @@ const EIDETIC = (() => {
       }
     }
     const lexicalTokens = tokenList(query, 28).filter(t => !nameTokens.has(t));
+    const lexicalVariantGroups = lexicalTokens.map(t => lexicalVariants(t));
+    const variants = Object.create(null);
+    for (let i = 0; i < lexicalTokens.length; i++) variants[lexicalTokens[i]] = lexicalVariantGroups[i];
     const tags = semanticTags(query);
     const allTokens = lexicalTokens.slice();
     for (let i = 0; i < tags.length; i++) if (allTokens.indexOf(tags[i]) < 0) allTokens.push(tags[i]);
@@ -6461,6 +6771,8 @@ const EIDETIC = (() => {
       raw: query,
       tokens: allTokens,
       lexicalTokens: lexicalTokens,
+      lexicalVariantGroups: lexicalVariantGroups,
+      variants: variants,
       tags: tags,
       names: qnames,
       explicitRecall: explicitRecallLanguage(query) || currentStateLookup,
@@ -6498,6 +6810,11 @@ const EIDETIC = (() => {
     return false;
   }
 
+  function keywordMatchesVariants(keywordPipe, vars) {
+    for (let i = 0; i < vars.length; i++) if (keywordPipe.indexOf("|" + vars[i] + "|") >= 0) return true;
+    return false;
+  }
+
   function scoreRecord(e, plan, charKey, turn, isAnchor, isCold) {
     if (!e) return -999;
     if (charKey && !eventOwnerAllows(e, charKey)) return -999;
@@ -6512,7 +6829,8 @@ const EIDETIC = (() => {
     const kw = "|" + recKeywords(e) + "|";
     let lexicalMatches = 0;
     const lexical = Array.isArray(plan.lexicalTokens) ? plan.lexicalTokens : plan.tokens.filter(x => x.charAt(0) !== "@");
-    for (let i = 0; i < lexical.length; i++) if (keywordMatchesLexical(kw, lexical[i])) lexicalMatches++;
+    const variantGroups = Array.isArray(plan.lexicalVariantGroups) ? plan.lexicalVariantGroups : lexical.map(t => lexicalVariants(t));
+    for (let i = 0; i < variantGroups.length; i++) if (keywordMatchesVariants(kw, variantGroups[i])) lexicalMatches++;
     let tagMatches = 0, strongTagMatches = 0;
     const tags = Array.isArray(plan.tags) ? plan.tags : plan.tokens.filter(x => x.charAt(0) === "@");
     for (let i = 0; i < tags.length; i++) {
@@ -6642,6 +6960,15 @@ const EIDETIC = (() => {
     return "EVENT";
   }
 
+  function currentStateFacet(text) {
+    const t = cleanText(text).toLowerCase();
+    if (/\b(?:lives?|living|moved?|move(?:s|d)? to|home|resides?|based|quarters|address)\b/.test(t)) return "location";
+    if (/\b(?:works? as|works? at|job|employed|employment|became|promoted|retired|student|lawyer|doctor|teacher|engineer|officer)\b/.test(t)) return "role";
+    if (/\b(?:died|dead|alive|resurrected|revived|injured|wounded|hospitalized|hospitalised|pregnant|gave birth)\b/.test(t)) return "status";
+    if (/\b(?:married|divorced|engaged|dating|partner|girlfriend|boyfriend|wife|husband|spouse|broke up|break up)\b/.test(t)) return "relationship";
+    return "";
+  }
+
   function combinedRecallRecords(got) {
     const plan = got && got.plan ? got.plan : { temporal: "neutral", explicitRecall: false };
     const all = [];
@@ -6663,6 +6990,17 @@ const EIDETIC = (() => {
       return (b.e.score - a.e.score) || (b.e.turn - a.e.turn) || (a.kind === "anchor" ? -1 : 1);
     });
     const cap = plan.explicitRecall ? 5 : (EIDETIC_CONFIG.ANCHORS_PER_CHARACTER + EIDETIC_CONFIG.MEMORIES_PER_CHARACTER);
+    if (plan.currentStateLookup && plan.temporal !== "earliest") {
+      const filtered = [];
+      const seenFacet = new Set();
+      for (let i = 0; i < all.length && filtered.length < Math.max(1, cap); i++) {
+        const facet = currentStateFacet(all[i].e.text);
+        if (facet && seenFacet.has(facet)) continue;
+        if (facet) seenFacet.add(facet);
+        filtered.push(all[i]);
+      }
+      return filtered;
+    }
     return all.slice(0, Math.max(1, cap));
   }
 
@@ -6676,8 +7014,10 @@ const EIDETIC = (() => {
       if (!ch) continue;
       for (let i = 0; i < storyCards.length && out.length < EIDETIC_CONFIG.MAX_CARD_SEEDS; i++) {
         const c = storyCards[i] || {};
+        const type = safeText(c.type).toLowerCase();
+        if (!/character|npc|person|people|cast/.test(type)) continue;
         const keys = splitKeys(c.keys).map(x => x.trim().toLowerCase());
-        const entry = cleanText(c.entry);
+        const entry = cleanText(c.entry != null ? c.entry : c.value);
         const aliases = (ch.aliases && ch.aliases.length ? ch.aliases : [ch.name]);
         const matchKey = aliases.some(a => keys.indexOf(normName(a)) >= 0) || keys.indexOf(key) >= 0;
         const matchEntry = aliases.some(a => new RegExp("(^|[^a-z0-9])" + escapeRe(a) + "([^a-z0-9]|$)", "i").test(entry));
@@ -6738,7 +7078,7 @@ const EIDETIC = (() => {
     if (r.runtime.recallCacheKey === cacheKey) return r.runtime.recallCacheBlock || "";
 
     const plan = makeQueryPlan(query);
-    const active = activeCharacters(query);
+    const active = activeCharacters(query, plan);
     const body = [];
 
     const seeds = relevantCardSeeds(active);
@@ -6749,13 +7089,18 @@ const EIDETIC = (() => {
       if (!ch) continue;
       const got = retrieveForCharacter(key, query);
       const records = combinedRecallRecords(got);
-      const noVerifiedMemory = !records.length;
+      const stateFacts = retrieveCurrentState(key, got.plan || plan, EIDETIC_CONFIG.STATE_FACTS_PER_CHARACTER);
+      const noVerifiedMemory = !records.length && !stateFacts.length;
       if (noVerifiedMemory && !seeds.some(s => s.key === key)) {
         if (plan.explicitRecall && EIDETIC_CONFIG.ABSTAIN_ON_EXPLICIT_RECALL_MISS) body.push(ch.name.toUpperCase() + " — PRIVATE CONTINUITY: no verified matching memory found; do not invent one.");
         continue;
       }
       body.push(ch.name.toUpperCase() + " — PRIVATE CONTINUITY:");
       if (noVerifiedMemory && plan.explicitRecall && EIDETIC_CONFIG.ABSTAIN_ON_EXPLICIT_RECALL_MISS) body.push("• no verified matching memory found; do not invent one.");
+      for (let sj = 0; sj < stateFacts.length; sj++) {
+        const sf = stateFacts[sj];
+        body.push("• CURRENT KNOWN " + safeText(sf.slot).toUpperCase() + " T" + sf.turn + ": " + displayText(sf.text, 245));
+      }
       for (let j = 0; j < records.length; j++) {
         const rec = records[j];
         const e = rec.e;
@@ -6885,23 +7230,33 @@ const EIDETIC = (() => {
   }
 
   function scrubLeak(text) {
+    const original = safeText(text);
+    if (!/\[\[EIDETIC_RECALL/i.test(original)) return original;
+    let cleaned = original.replace(/\[\[EIDETIC_RECALL[^\n]*\]\][\s\S]*?\[\[\/EIDETIC_RECALL\]\]/gi, "");
+    const open = cleaned.search(/\[\[EIDETIC_RECALL/i);
+    if (open >= 0) cleaned = cleaned.slice(0, open);
+    if (/^\s/.test(original) && cleaned && !/^\s/.test(cleaned)) cleaned = " " + cleaned;
+    return cleaned;
+  }
+
+  function normalizeOutputSpacing(text) {
     text = safeText(text);
-    text = text.replace(/\[\[EIDETIC_RECALL[^\n]*\]\][\s\S]*?\[\[\/EIDETIC_RECALL\]\]/gi, "").replace(/^\s+/, "");
-    return text;
+    if (EIDETIC_CONFIG.OUTPUT_SPACING !== "auto" || !text || /^\s/.test(text) || /^[,.;:!?…)\]}]/.test(text)) return text;
+    if (typeof history === "undefined" || !Array.isArray(history) || !history.length) return text;
+    const prev = safeText(history[history.length - 1] && history[history.length - 1].text);
+    if (!prev || /\s$/.test(prev)) return text;
+    return " " + text;
   }
 
   function getCharKey(name) {
     const r = root();
     if (!r) return null;
     const k = normName(name);
+    if (!k) return null;
     if (k.split(" ").length === 1 && (r.ambiguousFirstNames || []).indexOf(k) >= 0) return null;
     if (r.chars[k]) return k;
-    const keys = Object.keys(r.chars);
-    for (let i = 0; i < keys.length; i++) {
-      const ch = r.chars[keys[i]];
-      if ((ch.aliases || []).some(a => normName(a) === k)) return keys[i];
-    }
-    return null;
+    const idx = aliasIndex();
+    return idx.map[k] || null;
   }
 
   function commandText(raw) {
@@ -6928,13 +7283,13 @@ const EIDETIC = (() => {
 
     if (cmd === "eidetic" || cmd === "memory") {
       const chars = Object.keys(r.chars).length;
-      setMessage("EIDETIC " + VERSION + " • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • turn " + currentTurn());
+      setMessage("EIDETIC • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • " + r.ledger.length + " current-state facts • turn " + currentTurn());
       return { text: null, stop: true };
     }
 
     if (cmd === "memstats") {
       const approx = JSON.stringify(r).length;
-      setMessage("EIDETIC archive: " + r.hot.length + " hot + " + r.cold.length + " cold + " + r.anchors.length + " anchors • ~" + Math.round(approx / 1024) + " KB serialized • recall rev " + (r.runtime.recallRev || 0) + " • retry purges " + (r.stats.retryPurges || 0));
+      setMessage("EIDETIC archive: " + r.hot.length + " hot + " + r.cold.length + " cold + " + r.anchors.length + " anchors + " + r.ledger.length + " state facts • ~" + Math.round(approx / 1024) + " KB serialized • recall rev " + (r.runtime.recallRev || 0) + " • retry purges " + (r.stats.retryPurges || 0));
       return { text: null, stop: true };
     }
 
@@ -6989,6 +7344,7 @@ const EIDETIC = (() => {
         owners = new Set(k ? [k] : [PLAYER]);
       }
       addAnchor(fact, owners, currentTurn(), "manual", true);
+      addStateFacts(fact, owners, currentTurn(), "manual", "manual:" + hash(fact), "event", true);
       setMessage("Pinned memory for " + who + ": " + displayText(fact, 180));
       return { text: null, stop: true };
     }
@@ -7009,8 +7365,8 @@ const EIDETIC = (() => {
     }
 
     if (cmd === "memdebug") {
-      if (/^on$/i.test(arg)) r.debug = true;
-      else if (/^off$/i.test(arg)) r.debug = false;
+      if (/^on$/i.test(arg)) { r.debug = true; setConfigValueInCard("debug", "on"); }
+      else if (/^off$/i.test(arg)) { r.debug = false; setConfigValueInCard("debug", "off"); }
       setMessage("EIDETIC debug " + (r.debug ? "ON" : "OFF"));
       return { text: null, stop: true };
     }
@@ -7048,7 +7404,6 @@ const EIDETIC = (() => {
   }
 
   function run(hook, text) {
-    if (!EIDETIC_CONFIG.ENABLED) return { text: text, stop: false };
     init();
     if (!EIDETIC_CONFIG.ENABLED) { clearFrontMemory(); return { text: text, stop: false }; }
     const r = root();
@@ -7079,7 +7434,8 @@ const EIDETIC = (() => {
     }
 
     if (hook === "output") {
-      const cleaned = scrubLeak(text);
+      let cleaned = normalizeOutputSpacing(scrubLeak(text));
+      if (cleaned === "") cleaned = " ";
       ingest(cleaned, "output");
       if (EIDETIC_CONFIG.REFRESH_RECALL_AFTER_OUTPUT) {
         const block = buildRecall(cleaned);
@@ -7094,7 +7450,7 @@ const EIDETIC = (() => {
   }
 
   run._test = {
-    version: VERSION,
+    schema: SCHEMA_REVISION,
     root: root,
     buildRecall: buildRecall,
     retrieveForCharacter: retrieveForCharacter,
@@ -7106,6 +7462,14 @@ const EIDETIC = (() => {
     participantKeys: participantKeys,
     effectiveRecallBudget: effectiveRecallBudget,
     storyCardAliasCandidate: storyCardAliasCandidate,
+    ensureConfigCard: ensureConfigCard,
+    applyConfigCard: applyConfigCard,
+    normalizeOutputSpacing: normalizeOutputSpacing,
+    scrubLeak: scrubLeak,
+    activeCharacters: activeCharacters,
+    currentStateFacet: currentStateFacet,
+    retrieveCurrentState: retrieveCurrentState,
+    stateSlotsForCharacter: stateSlotsForCharacter,
   };
 
   return run;
