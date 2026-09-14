@@ -24,9 +24,11 @@ The result is continuity that feels **personal, selective, historical, and chara
 
 EIDETIC automatically creates **🧠 EIDETIC — Config & Guide** when an Adventure starts. No setup card, character list, or command is required for normal use.
 
-On runtimes that expose Story Card Notes to scripts, the settings and explanations live in the player-only **Notes** field and the Entry is kept blank. If that metadata is unavailable, EIDETIC automatically falls back to the Story Card **Entry** behind a deliberately obscure trigger so it still stays out of normal story context.
+The Story Card **Entry** is the actual editable control panel. It contains only the main `setting = value` options so players can change EIDETIC without digging through a long guide. The card uses a deliberately obscure trigger so those controls do not normally enter story context.
 
-Edit only the value after `=`. The card controls the master switch, strict knowledge boundaries, automatic NPC detection, narrative recall, abstention, the Current State Ledger, memory depth, recall size, active-character count, output spacing, and debug mode. If the card cannot be created at all, the memory engine keeps running on safe defaults instead of breaking the Adventure.
+The Story Card **Notes** contain the plain-English explanation of every option, recommended values, automatic features, and optional commands. This keeps the controls easy to edit while keeping the documentation separate.
+
+Edit only the value after `=` in Entry. The card controls the master switch, memory depth, recall size, strict knowledge boundaries, automatic detection, the Current State Ledger, world memory, story-time tracking, narrative recall, abstention, active-character count, output spacing, and debug mode. Existing older EIDETIC config cards are migrated into this layout while preserving their selected values. If the card cannot be created at all, the memory engine keeps running on safe defaults instead of breaking the Adventure.
 
 
 ## 🔄 Drop-In Existing Adventure Activation
@@ -226,48 +228,45 @@ This strengthens retrieval without requiring an external embedding service or an
 
 ## 🛡️ Detection Fortress
 
-EIDETIC includes a dedicated anti-junk character detection layer designed to stop ordinary capitalized nouns from becoming fake NPCs.
+EIDETIC uses a staged **entity-aware detection system** before anything is allowed to become persistent scenario memory. It does not treat every capitalized phrase as a character.
 
-It evaluates **person evidence**, not capitalization alone.
+The detector separates candidates into:
 
-### ✅ Strong Character Evidence
-Signals such as:
+- **CHARACTER**
+- **LOCATION**
+- **ITEM**
+- **VEHICLE**
+- **ORGANIZATION**
+- **EVENT**
+- **UNKNOWN**
 
-- dialogue attribution
-- direct address
-- introductions
-- relationships
-- kinship
-- titles
-- human actions
-- human possessive context
-- Character Story Cards
-- repeated independent person-like evidence
+Each candidate accumulates compact evidence instead of being promoted from capitalization alone. Strong evidence can promote immediately; ambiguous evidence remains provisional until repeated or confirmed. Candidate pools are bounded and stale candidates expire automatically.
 
-can strengthen an identity.
+### 👤 Character Evidence
 
-### ❌ Strong Non-Character Evidence
-Locations, rooms, facilities, vehicles, items, organizations, departments, systems, events, headings, calendar terms, UI words, and narrative vocabulary receive negative evidence.
+Person evidence includes dialogue attribution, `Name:` speaker labels, reverse dialogue such as `"No," said Alice`, introductions, relationships, kinship, titles, direct address, interpersonal actions, human possessives, initials, accented names, surname particles, Character Story Cards and repeated independent human behaviour.
 
-The detector contains thousands of explicit non-person patterns and vocabulary entries built specifically to resist junk promotion.
+Names such as `María de la Cruz`, `J. R. Vale`, `Captain Reyes`, `Rose`, `Hunter` or even `Monday` can still become genuine characters when the story proves they are people.
 
-### 🌹 Ambiguous Names Still Work
-Names such as:
+### 🌍 World-Entity Evidence
 
-- Rose
-- Hope
-- Raven
-- Summer
-- Hunter
-- Monday
+The same detection layer can classify scenario entities from their use:
 
-are not blindly blocked.
+- entering/arriving/returning → location evidence
+- picking up/giving/hiding/using → item evidence
+- boarding/driving/piloting → vehicle evidence
+- joining/working for/leading → organization evidence
+- named battles/incidents/wars/ceremonies → event evidence
 
-They simply need convincing human evidence before becoming persistent characters.
+This lets `London`, `Vault Nine`, `Excalibur`, `Serenity`, `S.H.I.E.L.D.` and `Battle of Blackwood` become different kinds of persistent entities instead of fake NPCs.
 
-That means **Rose says, “Come with me.”** can create a real character.
+### 🚫 Anti-Junk Suppression
 
-Repeated document headings containing **Rose** cannot.
+Headings, UI labels, narrative metadata, calendar vocabulary, departments, ordinary systems, generic world nouns and thousands of explicit non-person phrases receive negative evidence. Labels such as `CHAPTER:`, `SCENE:`, `SYSTEM:`, `OUTPUT SETTINGS` or `MEMORY SUMMARY` are prevented from becoming characters just because they are formatted like speaker names.
+
+Generic entities can remain provisional. A single mention of `the room` or `the key` need not permanently enter the world database; repeated meaningful use can promote it later.
+
+`/memdetect` reports tracked characters, character candidates, world entities, world candidates, rejected observations and stale-candidate pruning so the detector can be inspected while an Adventure runs.
 
 ---
 
