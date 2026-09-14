@@ -79,12 +79,20 @@ const EIDETIC_CONFIG = {
   TRACK_STORY_TIME: true,
 
   DEBUG: false,
+
+  // Durable live-continuity sync. Existing Story Card Entry text is never rewritten.
+  SYNC_STORY_CARD_NOTES: true,
+  AUTO_CURRENT_CONTINUITY_CARD: true,
+  CURRENT_CONTINUITY_KEY: "%__EIDETIC_CURRENT_7D4B__%",
+  LIVE_FACT_LIMIT: 180,
+  LIVE_FACT_CHARS: 260,
+  CARD_NOTE_FACTS: 8,
 };
 
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 10;
+  const SCHEMA_REVISION = 11;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -18051,6 +18059,7 @@ const EIDETIC = (() => {
       cold: [],
       anchors: [],
       ledger: [],
+      liveFacts: [],
       world: { entities: {}, candidates: {}, facts: [], timeline: [], clock: { hours: 0, baseEpochHours: null, currentDateLabel: "", currentTimeLabel: "", knownElapsed: false } },
       chars: {},
       candidates: {},
@@ -18058,9 +18067,9 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [] },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1 },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
-      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0 },
+      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, liveCardWrites: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
     };
   }
@@ -18104,6 +18113,9 @@ const EIDETIC = (() => {
     if (!Number.isFinite(r.runtime.bootstrapImported)) r.runtime.bootstrapImported = 0;
     if (typeof r.runtime.activationAnnounced !== "boolean") r.runtime.activationAnnounced = !!r.runtime.bootstrapDone;
     if (!Array.isArray(r.runtime.lastWorldEntities)) r.runtime.lastWorldEntities = [];
+    if (!(typeof r.runtime.liveCardId === "number" || typeof r.runtime.liveCardId === "string")) r.runtime.liveCardId = "";
+    if (!Number.isFinite(r.runtime.liveSyncTurn)) r.runtime.liveSyncTurn = -1;
+    if (!Array.isArray(r.liveFacts)) r.liveFacts = [];
     if (!r.stats || typeof r.stats !== "object") r.stats = {};
     if (!r.last || typeof r.last !== "object") r.last = {};
     if (!Number.isFinite(r.last.inputTurn)) r.last.inputTurn = -1;
@@ -18797,6 +18809,7 @@ const EIDETIC = (() => {
       "/focus auto — return to automatic focus",
       "/remember Alice | fact — pin a creator-confirmed memory",
       "/recall Alice | topic — inspect matching memory",
+      "/live — show durable played-continuity capture + Story Card write counts",
       "/memdebug on/off — diagnostics",
       "/memclear CONFIRM — erase EIDETIC memory",
       "",
@@ -18976,6 +18989,91 @@ const EIDETIC = (() => {
     const ac = Number(configValue(n,"activeCharacters"));
     EIDETIC_CONFIG.MAX_ACTIVE_CHARACTERS = Number.isFinite(ac) ? Math.max(1,Math.min(8,Math.floor(ac))) : 4;
     if (r) r.debug = EIDETIC_CONFIG.DEBUG;
+  }
+
+
+  const EIDETIC_NOTES_OPEN = "[[EIDETIC LIVE CONTINUITY]]";
+  const EIDETIC_NOTES_CLOSE = "[[/EIDETIC LIVE CONTINUITY]]";
+
+  function stripEideticNotes(text) {
+    text=safeText(text); const a=text.indexOf(EIDETIC_NOTES_OPEN), b=text.indexOf(EIDETIC_NOTES_CLOSE);
+    if(a<0||b<a)return text.trim();
+    return (text.slice(0,a)+text.slice(b+EIDETIC_NOTES_CLOSE.length)).replace(/\n{3,}/g,"\n\n").trim();
+  }
+  function evidenceState(text, mode) {
+    const t=cleanText(text);
+    if(mode==="question")return "QUESTION";
+    if(mode==="belief")return "BELIEF";
+    if(mode==="claim")return "CLAIM";
+    if(mode==="uncertain"||/\b(?:maybe|perhaps|possibly|might|could|seems?|appears?|looks? like|apparently|probably|likely|unlikely|i think|i believe|we think|we believe|suspect|theory|hypothesis|guess)\b/i.test(t))return "UNCONFIRMED";
+    if(/\b(?:means? that|therefore|proves?|proof that|must be|has to be|designed (?:for|to)|specifically target(?:ed|s)?|obviously|clearly|definitely|certainly)\b/i.test(t))return "INFERENCE";
+    if(/\b(?:isn't|is not|wasn't|was not|not actually|false|wrong|disproved|disproven)\b/i.test(t))return "NEGATED";
+    return "FACT";
+  }
+  function liveFactEligible(text, mode, imp) {
+    const t=cleanText(text); if(!t||mode==="question"||t.length<12)return false;
+    if(/^(?:okay|right|yes|no|yeah|yeh|thanks|thank you|hello|hi|bye|goodnight|night)\b[.!?]*$/i.test(t))return false;
+    if(mode==="event"||mode==="player-event") return imp>=3 || /\b(?:arriv(?:e|es|ed)|leav(?:e|es|ing)|return(?:s|ed)?|discover(?:s|ed)?|find(?:s|ing)?|found|attack(?:s|ed)?|injur(?:e|es|ed)|destroy(?:s|ed)?|die(?:s|d)?|dead|alive|missing|move(?:s|d)?|stay(?:s|ed)?|learn(?:s|ed)?|tell(?:s|ing)?|told|reveal(?:s|ed)?|measure(?:s|d)?|match(?:es|ed)?|orbit(?:s|ing)?|pod|vision|anomaly|relationship|partner|married|dating|pregnant|birthday|years? old)\b/i.test(t);
+    return mode==="claim"||mode==="belief"||mode==="uncertain";
+  }
+  function addLiveFact(text, owners, turn, kind, mode, imp, src) {
+    const r=root(); if(!r||!liveFactEligible(text,mode,imp))return;
+    const shown=displayText(text,EIDETIC_CONFIG.LIVE_FACT_CHARS), status=evidenceState(shown,mode);
+    // Never promote interpretation-heavy model prose to FACT merely because it was narrated confidently.
+    const finalStatus=(kind==="output"&&status==="FACT"&&/\b(?:means? |therefore|must |designed |specifically target|proves?|obviously|clearly)\b/i.test(shown))?"INFERENCE":status;
+    const names=namesMentioned(shown), world=worldEntitiesMentioned(shown);
+    const fp=hash(finalStatus+"|"+shown.toLowerCase());
+    if((r.liveFacts||[]).some(x=>x&&x.fp===fp))return;
+    r.liveFacts.push({id:"lf"+(++r.seq),turn,kind,mode,status:finalStatus,text:shown,owners:Array.from(owners||[PLAYER]),names,world,src,fp});
+    if(r.liveFacts.length>EIDETIC_CONFIG.LIVE_FACT_LIMIT)r.liveFacts.splice(0,r.liveFacts.length-EIDETIC_CONFIG.LIVE_FACT_LIMIT);
+    r.stats.liveFacts=Number(r.stats.liveFacts||0)+1;
+  }
+  function findStoryCardForCharacter(charKey) {
+    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return -1;
+    const r=root(), ch=r&&r.chars?r.chars[charKey]:null; if(!ch)return -1;
+    const forms=[ch.name].concat(ch.aliases||[]).map(normName).filter(Boolean);
+    for(let i=0;i<storyCards.length;i++){
+      const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase(); if(!/character|npc|person|people|cast/.test(type))continue;
+      const id=normName(storyCardIdentityName(cleanText(c.entry!=null?c.entry:c.value))), title=normName(c.title), keys=splitKeys(c.keys).map(normName);
+      if(forms.some(f=>f===id||f===title||keys.indexOf(f)>=0))return i;
+    }
+    return -1;
+  }
+  function liveFactsForCharacter(charKey, limit) {
+    const r=root(); if(!r)return[]; const out=[];
+    for(let i=r.liveFacts.length-1;i>=0&&out.length<(limit||EIDETIC_CONFIG.CARD_NOTE_FACTS);i--){
+      const f=r.liveFacts[i]; if(!f)continue;
+      if((f.names||[]).indexOf(charKey)>=0 || (f.owners||[]).indexOf(charKey)>=0)out.push(f);
+    }
+    return out.reverse();
+  }
+  function liveFactLine(f){ return "T"+f.turn+" ["+f.status+"] "+displayText(f.text,EIDETIC_CONFIG.LIVE_FACT_CHARS); }
+  function writeCharacterLiveNotes(charKey) {
+    if(!EIDETIC_CONFIG.SYNC_STORY_CARD_NOTES)return false; const idx=findStoryCardForCharacter(charKey); if(idx<0)return false;
+    const facts=liveFactsForCharacter(charKey,EIDETIC_CONFIG.CARD_NOTE_FACTS); if(!facts.length)return false;
+    const c=storyCards[idx], base=stripEideticNotes(c.notes), block=EIDETIC_NOTES_OPEN+"\nCurrent played continuity — newest played events override stale setup text. Evidence labels matter; CLAIM/INFERENCE/UNCONFIRMED are not facts.\n"+facts.map(liveFactLine).join("\n")+"\n"+EIDETIC_NOTES_CLOSE;
+    const next=(base?base+"\n\n":"")+block; if(safeText(c.notes)===next)return false;
+    try{c.notes=next;}catch(_){return false;} root().stats.cardNoteWrites=Number(root().stats.cardNoteWrites||0)+1; return true;
+  }
+  function findCurrentContinuityCardIndex(){
+    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return -1; const r=root(), id=r&&r.runtime?r.runtime.liveCardId:"";
+    if(id!==""&&id!=null)for(let i=0;i<storyCards.length;i++)if(storyCards[i]&&String(storyCards[i].id)===String(id))return i;
+    for(let i=0;i<storyCards.length;i++){const c=storyCards[i]||{}, keys=splitKeys(c.keys);if(keys.indexOf(EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY)>=0||safeText(c.title)==="🧠 EIDETIC — Current Played Continuity")return i;} return -1;
+  }
+  function ensureCurrentContinuityCard(){
+    if(!EIDETIC_CONFIG.AUTO_CURRENT_CONTINUITY_CARD||typeof storyCards==="undefined"||!Array.isArray(storyCards))return null; let idx=findCurrentContinuityCardIndex();
+    if(idx<0&&typeof addStoryCard==="function")try{const made=addStoryCard(EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY,"EIDETIC-managed current played continuity. Do not edit the generated Notes block.","Custom");if(Number.isInteger(made))idx=made;if(idx<0)idx=findCurrentContinuityCardIndex();}catch(_){}
+    if(idx<0||!storyCards[idx])return null; const c=storyCards[idx],r=root(); if(c.id!=null)r.runtime.liveCardId=c.id; c.type="Custom"; try{c.title="🧠 EIDETIC — Current Played Continuity";}catch(_){} c.keys=EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY; return c;
+  }
+  function syncCurrentContinuityCard(){
+    const r=root(),c=ensureCurrentContinuityCard(); if(!r||!c)return false; const facts=(r.liveFacts||[]).slice(-24); const lines=facts.map(liveFactLine);
+    const base=stripEideticNotes(c.notes), block=EIDETIC_NOTES_OPEN+"\nLIVE PLAYED CANON. Newer played events supersede stale setup/history. FACT is observed/played; CLAIM, BELIEF, INFERENCE and UNCONFIRMED must never be silently promoted.\n"+(lines.length?lines.join("\n"):"No durable played facts captured yet.")+"\n"+EIDETIC_NOTES_CLOSE;
+    const next=(base?base+"\n\n":"")+block; if(safeText(c.notes)===next)return false; try{c.notes=next;}catch(_){return false;} r.stats.liveCardWrites=Number(r.stats.liveCardWrites||0)+1; return true;
+  }
+  function syncLiveStoryCards(force){
+    const r=root(); if(!r||typeof storyCards==="undefined"||!Array.isArray(storyCards))return; const t=currentTurn(); if(!force&&r.runtime.liveSyncTurn===t)return;
+    const touched=new Set(); for(let i=Math.max(0,r.liveFacts.length-30);i<r.liveFacts.length;i++){const f=r.liveFacts[i]||{};(f.names||[]).forEach(k=>touched.add(k));}
+    touched.forEach(k=>writeCharacterLiveNotes(k)); syncCurrentContinuityCard(); r.runtime.liveSyncTurn=t;
   }
 
   function seedFromStoryCards() {
@@ -20302,6 +20400,7 @@ const EIDETIC = (() => {
       const imp = mode === "question" ? 1 : importance(c);
       applyTemporalMarkers(c, owners, turn, kind, srcHash + ":" + i);
       addWorldMemory(c, owners, turn, kind, srcHash + ":" + i, mode);
+      addLiveFact(c, owners, turn, kind, mode, imp, srcHash + ":" + i);
 
       const repeated = suppressExactRepeat(c, kind, ownerArray, mode, imp);
       if (!repeated) {
@@ -20341,6 +20440,7 @@ const EIDETIC = (() => {
     r.last.turn = turn;
     if (kind === "input") { r.last.inputHash = srcHash; r.last.inputTurn = turn; }
     if (kind === "output") { r.last.outputHash = srcHash; r.last.outputTurn = turn; }
+    syncLiveStoryCards(true);
   }
 
   function eventOwnerAllows(e, charKey) {
@@ -20973,7 +21073,7 @@ const EIDETIC = (() => {
   function handleCommand(raw) {
     const r = root();
     const s = commandText(raw);
-    if (!/^\/(?:eidetic|memory|remember|recall|focus|roster|world|timeline|entity|memstats|memdetect|memdebug|memclear)\b/i.test(s)) return null;
+    if (!/^\/(?:eidetic|memory|remember|recall|focus|roster|world|timeline|entity|live|memstats|memdetect|memdebug|memclear)\b/i.test(s)) return null;
     const m = s.match(/^\/(\w+)\s*(.*)$/);
     if (!m) return null;
     const cmd = m[1].toLowerCase();
@@ -20981,8 +21081,15 @@ const EIDETIC = (() => {
 
     if (cmd === "eidetic" || cmd === "memory") {
       const chars = Object.keys(r.chars).length;
-      setMessage("EIDETIC • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • " + r.ledger.length + " current-state facts • " + (r.world ? Object.keys(r.world.entities||{}).length : 0) + " world entities • " + (r.world ? r.world.timeline.length : 0) + " timeline events • existing-history import " + Number(r.runtime.bootstrapImported || 0) + " actions • turn " + currentTurn());
+      setMessage("EIDETIC • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • " + r.ledger.length + " current-state facts • " + (r.liveFacts||[]).length + " live continuity facts • " + (r.world ? Object.keys(r.world.entities||{}).length : 0) + " world entities • " + (r.world ? r.world.timeline.length : 0) + " timeline events • existing-history import " + Number(r.runtime.bootstrapImported || 0) + " actions • turn " + currentTurn());
       return { text: null, stop: true };
+    }
+
+    if (cmd === "live") {
+      syncLiveStoryCards(true);
+      const lf=(r.liveFacts||[]).slice(-8);
+      setMessage("EIDETIC live continuity: "+(r.liveFacts||[]).length+" durable facts • "+Number(r.stats.cardNoteWrites||0)+" character-note writes • "+Number(r.stats.liveCardWrites||0)+" continuity-card writes"+(lf.length?" • latest: "+lf.map(liveFactLine).join(" • "):""));
+      return { text:null, stop:true };
     }
 
     if (cmd === "memstats") {
@@ -21120,6 +21227,7 @@ const EIDETIC = (() => {
     applyConfigCard();
     seedFromStoryCards();
     seedWorldEntitiesFromStoryCards();
+    syncLiveStoryCards(false);
     const imported = bootstrapExistingHistory();
     announceActivation(imported);
     rollbackFuture(currentTurn());
@@ -21200,6 +21308,10 @@ const EIDETIC = (() => {
     worldFactSlots: worldFactSlots,
     worldEventCategory: worldEventCategory,
     strictEventCategory: strictEventCategory,
+    evidenceState: evidenceState,
+    addLiveFact: addLiveFact,
+    syncLiveStoryCards: syncLiveStoryCards,
+    stripEideticNotes: stripEideticNotes,
   };
 
   return run;

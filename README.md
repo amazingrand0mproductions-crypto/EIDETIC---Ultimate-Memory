@@ -519,3 +519,13 @@ That can make a conversation from hundreds or thousands of actions ago affect wh
 # 🧠 EIDETIC
 
 ### **The story moves forward. The characters keep the past.**
+
+## Live Continuity Sync (Schema 11)
+
+EIDETIC now keeps a durable played-continuity layer in addition to its hot/cold recall archive. Significant played developments are classified as `FACT`, `CLAIM`, `BELIEF`, `INFERENCE`, `UNCONFIRMED`, or `NEGATED` so mystery interpretations are not silently promoted into canon.
+
+The engine manages one additional hidden-key Story Card, **🧠 EIDETIC — Current Played Continuity**, whose Notes contain the latest durable developments. Existing recurring Character cards receive a bounded `[[EIDETIC LIVE CONTINUITY]]` Notes block when relevant. Hand-written Notes outside that block and all Story Card Entry text are preserved.
+
+This fixes the failure mode where EIDETIC remembered old scenario setup but did not visibly advance Story Cards after played events. Newer played continuity is explicitly marked as overriding stale setup/history, while uncertain conclusions remain labelled uncertain.
+
+Use `/live` to verify the system in an adventure. It reports durable live facts, Character-card Notes writes, continuity-card writes, and a preview of the latest captured facts.
