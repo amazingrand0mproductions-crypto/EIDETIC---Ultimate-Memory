@@ -28,7 +28,7 @@ The Story Card **Entry** is the actual editable control panel. It contains only 
 
 The Story Card **Notes** contain the plain-English explanation of every option, recommended values, automatic features, and optional commands. This keeps the controls easy to edit while keeping the documentation separate.
 
-Edit only the value after `=` in Entry. The card controls the master switch, memory depth, recall size, strict knowledge boundaries, automatic detection, the Current State Ledger, world memory, story-time tracking, narrative recall, abstention, active-character count, output spacing, and debug mode. Existing older EIDETIC config cards are migrated into this layout while preserving their selected values. If the card cannot be created at all, the memory engine keeps running on safe defaults instead of breaking the Adventure.
+Edit only the value after `=` in Entry. The card controls the master switch, memory depth, recall size, strict knowledge boundaries, automatic detection, **detection mode**, the Current State Ledger, world memory, story-time tracking, narrative recall, abstention, active-character count, output spacing, and debug mode. `detectionMode = strict` is the recommended default: ambiguous names and objects remain provisional/episodic until direct evidence proves what they are. Existing older EIDETIC config cards are migrated into this layout while preserving their selected values. If the card cannot be created at all, the memory engine keeps running on safe defaults instead of breaking the Adventure.
 
 
 ## 🔄 Drop-In Existing Adventure Activation
@@ -164,6 +164,56 @@ That matters for changing homes, relationships, jobs, injuries, allegiances, pos
 
 ---
 
+
+## 🌍 Scenario-Wide World Memory
+
+EIDETIC now keeps structured continuity for more than NPC memories. It can maintain persistent identities and histories for:
+
+- characters
+- locations
+- items
+- vehicles
+- organizations / factions
+- named events
+- explicit dates and story-time markers
+
+The structured world layer is deliberately separate from the ordinary episodic archive. **Ordinary prose stays episodic unless it proves a durable fact or state change.**
+
+That distinction prevents a sentence such as:
+
+> *The air smells of ozone and burnt metal.*
+
+from becoming a fake "destruction event", while allowing:
+
+> *The Legacy Exhibit is destroyed by an explosion.*
+
+to become a verified location-condition change and timeline event.
+
+### 🕰️ Current State + Historical Timeline
+
+For persistent entities EIDETIC separates:
+
+**what happened** → episodic memory  
+**what is true now** → current-state fact  
+**when a durable change happened** → world timeline
+
+A death can therefore remain historical while later story time advances:
+
+> *Elias dies from his wounds.*  
+> *One year later...*
+
+EIDETIC can retain that Elias is dead, retain the original death event, advance the story clock, and later surface the death as approximately **one year ago** instead of treating every old event as equally recent.
+
+The same model supports moves, injuries, ownership changes, destruction/repair, organization changes and other explicit state transitions.
+
+### 🔐 Provenance Still Matters
+
+World memory does not override the knowledge firewall. Private discoveries remain private to the characters who actually witnessed or learned them. Claims, rumours and "presumed" states retain their uncertainty instead of automatically becoming objective truth.
+
+For example, a museum plaque saying a missing character is **"presumed deceased"** is stored as sourced/uncertain information; it does not automatically overwrite that character's objective current status.
+
+---
+
 ## 🧭 Knowledge-Scoped Current State
 
 Long stories need more than old-event recall. EIDETIC maintains a compact **Current State Ledger** for the newest verified state a character knows about.
@@ -228,7 +278,9 @@ This strengthens retrieval without requiring an external embedding service or an
 
 ## 🛡️ Detection Fortress
 
-EIDETIC uses a staged **entity-aware detection system** before anything is allowed to become persistent scenario memory. It does not treat every capitalized phrase as a character.
+EIDETIC uses a staged, **precision-first entity detector** before anything is allowed to become persistent structured memory. The recommended `detectionMode = strict` deliberately prefers a missed structured entity over a false permanent memory.
+
+Arbitrary capitalization is not enough. Generic noun phrases are not enough. Durable current-state facts require direct grammatical evidence, typed Story Cards, or repeated independent action-level evidence.
 
 The detector separates candidates into:
 
@@ -240,7 +292,7 @@ The detector separates candidates into:
 - **EVENT**
 - **UNKNOWN**
 
-Each candidate accumulates compact evidence instead of being promoted from capitalization alone. Strong evidence can promote immediately; ambiguous evidence remains provisional until repeated or confirmed. Candidate pools are bounded and stale candidates expire automatically.
+Each candidate accumulates compact evidence instead of being promoted from capitalization alone. Strong evidence can promote immediately; ambiguous evidence remains provisional until repeated or confirmed. **Repeated evidence is counted by independent AI Dungeon actions, not by multiple internal parsing passes over the same action.** Candidate pools are bounded and stale candidates expire automatically.
 
 ### 👤 Character Evidence
 
@@ -260,11 +312,15 @@ The same detection layer can classify scenario entities from their use:
 
 This lets `London`, `Vault Nine`, `Excalibur`, `Serenity`, `S.H.I.E.L.D.` and `Battle of Blackwood` become different kinds of persistent entities instead of fake NPCs.
 
+Current-state promotion is stricter than entity recognition. EIDETIC requires a **direct relation** such as `Ava is injured`, `Alice carries the Silver Key`, `the key is hidden in Vault Nine`, or `Blackwood Manor is destroyed`. A nearby verb elsewhere in the sentence is not enough.
+
 ### 🚫 Anti-Junk Suppression
 
 Headings, UI labels, narrative metadata, calendar vocabulary, departments, ordinary systems, generic world nouns and thousands of explicit non-person phrases receive negative evidence. Labels such as `CHAPTER:`, `SCENE:`, `SYSTEM:`, `OUTPUT SETTINGS` or `MEMORY SUMMARY` are prevented from becoming characters just because they are formatted like speaker names.
 
-Generic entities can remain provisional. A single mention of `the room` or `the key` need not permanently enter the world database; repeated meaningful use can promote it later.
+Generic entities can remain provisional. A single mention of `the room`, `the bag`, `the mug`, or `the key` need not permanently enter the world database. Promotion requires strong typed evidence or independent evidence from later actions. Internal rescans of one output cannot manufacture "repeat" evidence.
+
+Legacy parser artefacts are also scrubbed during schema migration. Old false entities such as field labels (`Name`, `Age`, `Role`), determiners (`The`), negators (`Not`), surname fragments, fake `/HISTORY` current-state records and invalid structured events are removed when the updated engine first runs.
 
 `/memdetect` reports tracked characters, character candidates, world entities, world candidates, rejected observations and stale-candidate pruning so the detector can be inspected while an Adventure runs.
 
@@ -351,16 +407,22 @@ The goal is to preserve **more story**.
 
 ## 📚 Story Card Awareness
 
-Existing Character Story Cards can reinforce:
+Story Cards are used as **trusted identity/type seeds**, not as automatic private memories.
 
-- identity
-- aliases
-- stable character information
-- active-character continuity
+EIDETIC can use typed Story Cards to establish that something is a:
 
-EIDETIC uses them as trusted identity seeds without turning the memory archive into thousands of generated Story Cards.
+- character
+- location
+- item
+- vehicle
+- organization / faction
+- event
 
-Character memory stays in persistent script state, avoiding trigger clutter and card spam.
+Character cards can also reinforce canonical names, aliases and codenames.
+
+EIDETIC deliberately does **not** copy an entire Story Card Entry into an NPC's `ESTABLISHED` recall packet. AI Dungeon already handles triggered Story Cards natively; duplicating their prose inside EIDETIC could leak future/hidden lore or make one NPC appear to know another card's private information.
+
+The episodic archive therefore stores **played continuity**, while Story Cards remain world-building/context sources.
 
 ---
 

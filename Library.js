@@ -13,6 +13,7 @@ const EIDETIC_CONFIG = {
   ALWAYS_FOCUS: [],
 
   AUTO_DISCOVER_CHARACTERS: true,
+  DETECTION_MODE: "strict",
   NAME_PROMOTION_HITS: 2,
   NAME_PROMOTION_SCORE: 7,
   NAME_STRONG_PROMOTION_SCORE: 7,
@@ -54,7 +55,7 @@ const EIDETIC_CONFIG = {
   APPEND_CONTEXT_FALLBACK: true,
   REFRESH_RECALL_AFTER_OUTPUT: false,
 
-  INCLUDE_RELEVANT_CARD_SEEDS: true,
+  INCLUDE_RELEVANT_CARD_SEEDS: false,
   CARD_SEED_CHARS: 260,
   MAX_CARD_SEEDS: 2,
 
@@ -83,7 +84,7 @@ const EIDETIC_CONFIG = {
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 7;
+  const SCHEMA_REVISION = 9;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -5343,6 +5344,7 @@ const EIDETIC = (() => {
       r.stats.migrations = (r.stats.migrations || 0) + 1;
       r.cold = r.cold.map(packCold).filter(Boolean);
     }
+    if (needsSchemaMigration) sanitizePersistedDetectionState(r);
     if (Object.prototype.hasOwnProperty.call(r, "v")) delete r.v;
     r.schema = SCHEMA_REVISION;
     r.debug = typeof r.debug === "boolean" ? r.debug : !!EIDETIC_CONFIG.DEBUG;
@@ -5447,7 +5449,7 @@ const EIDETIC = (() => {
     if (!t) return "event";
     if (/\?\s*$/.test(t) || /^\s*(?:who|what|when|where|why|how|did|does|is|are|was|were|can|could|would|will)\b/i.test(t)) return "question";
     if (/\b(?:thinks?|thought|wonders?|believes?|suspects?|imagines?|dreams?|hopes?|fears?|assumes?)\b/i.test(t)) return "belief";
-    if (/\b(?:rumou?r|alleged(?:ly)?|apparently|reportedly|maybe|perhaps|possibly|might|could have|seems?|appears to)\b/i.test(t)) return "uncertain";
+    if (/\b(?:rumou?r|alleged(?:ly)?|apparently|reportedly|presumed|supposedly|maybe|perhaps|possibly|might|could have|seems?|appears to)\b/i.test(t)) return "uncertain";
     if (/\b(?:says?|said|tells?|told|claims?|claimed|reports?|reported|insists?|insisted|accuses?|accused|according to)\b/i.test(t) || /[“"][^”"]{2,}[”"]/.test(t)) return "claim";
     return kind === "input" ? "player-event" : "event";
   }
@@ -5675,7 +5677,13 @@ const EIDETIC = (() => {
     while ((m = signature.exec(text)) !== null) add(m[1], 5, "signed-name", false);
 
     const generic = new RegExp("\\b" + DETECT_PROPER_PATTERN + "\\b", "g");
-    while ((m = generic.exec(text)) !== null) add(m[1], 4, "generic-capitalized", false);
+    while ((m = generic.exec(text)) !== null) {
+      const raw = safeText(m[1]).trim();
+      const bits = normName(raw).split(" ").filter(Boolean);
+      if (EIDETIC_CONFIG.DETECTION_MODE === "strict" && bits.length < 2) continue;
+      if (bits.length === 1 && singleTokenMatchesKnownCharacter(raw)) continue;
+      add(raw, EIDETIC_CONFIG.DETECTION_MODE === "strict" ? 2 : 4, "generic-capitalized", false);
+    }
 
     const all = Object.keys(map).map(k => map[k]);
     const rr = root();
@@ -5892,6 +5900,7 @@ const EIDETIC = (() => {
       recallSize: "balanced",
       strictKnowledge: "on",
       autoDetect: "on",
+      detectionMode: "strict",
       currentState: "on",
       worldMemory: "on",
       storyTime: "on",
@@ -5915,6 +5924,7 @@ const EIDETIC = (() => {
       "recallSize = " + v.recallSize,
       "strictKnowledge = " + v.strictKnowledge,
       "autoDetect = " + v.autoDetect,
+      "detectionMode = " + v.detectionMode,
       "currentState = " + v.currentState,
       "worldMemory = " + v.worldMemory,
       "storyTime = " + v.storyTime,
@@ -5956,7 +5966,11 @@ const EIDETIC = (() => {
       "Keeps private knowledge with the characters who actually knew or witnessed it. Recommended: on.",
       "",
       "autoDetect",
-      "Runs Detection Fortress for characters and world entities. It scores person/place/item/vehicle/organization/event evidence, keeps ambiguous candidates provisional, and rejects headings, UI text and other junk before persistent memory. Recommended: on.",
+      "Runs Detection Fortress for characters and world entities. Recommended: on.",
+      "",
+      "detectionMode",
+      "strict = precision-first. Ambiguous capitalized words and generic noun phrases stay episodic until direct evidence proves their type. Recommended.",
+      "balanced = allows slightly earlier promotion at the cost of more false-positive risk.",
       "",
       "currentState",
       "Tracks what is true now about characters: location, role, status, relationships, abilities, possessions, identity and other changing facts, while preserving older history.",
@@ -6159,6 +6173,8 @@ const EIDETIC = (() => {
     EIDETIC_CONFIG.ENABLED = bool("enabled", true);
     EIDETIC_CONFIG.STRICT_KNOWLEDGE = bool("strictKnowledge", true);
     EIDETIC_CONFIG.AUTO_DISCOVER_CHARACTERS = bool("autoDetect", true);
+    const detectionMode = configValue(n,"detectionMode");
+    EIDETIC_CONFIG.DETECTION_MODE = detectionMode === "balanced" ? "balanced" : "strict";
     EIDETIC_CONFIG.ENABLE_NARRATIVE_RECALL = bool("narrativeRecall", true);
     EIDETIC_CONFIG.ABSTAIN_ON_EXPLICIT_RECALL_MISS = bool("abstainOnMiss", true);
     EIDETIC_CONFIG.ENABLE_STATE_LEDGER = bool("currentState", true);
@@ -6213,10 +6229,10 @@ const EIDETIC = (() => {
       const characterish = /character|npc|person|people|cast/.test(type);
       if (!characterish) continue;
 
-      const entryName = entry.match(/^(?:name\s*[:=-]\s*)?([A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+){0,2})(?:\s+is\b|\s*[,;:\-])/);
+      const entryIdentity = storyCardIdentityName(entry);
       const titleName = safeText(c.title).trim();
       let canonical = "";
-      if (entryName && isPlausibleName(entryName[1], true)) canonical = entryName[1];
+      if (entryIdentity && isPlausibleName(entryIdentity, true)) canonical = entryIdentity;
       else if (titleName && isPlausibleName(titleName, true) && detectionPenalty(titleName) < 8) canonical = titleName;
       else {
         for (let j = 0; j < rawKeys.length; j++) {
@@ -6224,14 +6240,14 @@ const EIDETIC = (() => {
         }
       }
       if (!canonical || isPlayerName(canonical)) continue;
-      let charKey = ensureChar(canonical, entryName ? "story-card-entry" : "story-card", true);
+      let charKey = ensureChar(canonical, entryIdentity ? "story-card-entry" : "story-card", true);
       if (!charKey) continue;
-      if (entryName && isPlausibleName(entryName[1], true)) charKey = ensureChar(entryName[1], "story-card-entry", true) || charKey;
+      if (entryIdentity && isPlausibleName(entryIdentity, true)) charKey = ensureChar(entryIdentity, "story-card-entry", true) || charKey;
       for (let j = 0; j < rawKeys.length; j++) {
         const alias = rawKeys[j];
-        if (storyCardAliasCandidate(alias, canonical, entryName && entryName[1], entry)) addAliasToCharacter(charKey, alias, "story-card-alias");
+        if (storyCardAliasCandidate(alias, canonical, entryIdentity, entry)) addAliasToCharacter(charKey, alias, "story-card-alias");
       }
-      if (entryName) addAliasToCharacter(charKey, entryName[1], "story-card-entry");
+      if (entryIdentity) addAliasToCharacter(charKey, entryIdentity, "story-card-entry");
     }
     if (r && r.runtime) r.runtime.storyCardSig = sig;
   }
@@ -6307,7 +6323,7 @@ const EIDETIC = (() => {
       new RegExp("\\b" + n + "\\b" + coordinated + "\\s+(?:" + v + ")\\b", "i"),
       new RegExp("\\b" + n + "\\s+(?:" + v + ")\\b", "i"),
       new RegExp("\\b(?:with|beside|next to|toward|towards|at|near)\\s+" + n + "\\b", "i"),
-      new RegExp("\\b(?:tell|tells|told|ask|asks|asked|show|shows|showed|give|gives|gave|hand|hands|handed|call|calls|called|phone|phones|phoned|meet|meets|met|hug|hugs|hugged|kiss|kisses|kissed|hit|hits|attacks?|attacked)\\s+(?:to\\s+)?" + n + "\\b", "i"),
+      new RegExp("\\b(?:tell|tells|told|ask|asks|asked|show|shows|showed|give|gives|gave|hand|hands|handed|call|calls|called|phone|phones|phoned|meet|meets|met|join|joins|joined|approach|approaches|approached|hug|hugs|hugged|kiss|kisses|kissed|hit|hits|attacks?|attacked)\\s+(?:to\\s+)?" + n + "\\b", "i"),
       new RegExp("[\"”][^\"”]{1,220}[\"”][,.!?]?\\s*" + n + "\\s+(?:says|said|asks|asked|replies|replied|whispers|whispered|answers|answered)", "i")
     ];
     for (let i = 0; i < patterns.length; i++) if (patterns[i].test(text)) return true;
@@ -6581,13 +6597,16 @@ const EIDETIC = (() => {
   }
 
 
-  const WORLD_LOCATION_HEADS = new Set("city town village street road avenue lane drive boulevard square district university school college hospital office room hall lab laboratory annex station base facility tower bridge park forest woods mountain river lake island planet moon country kingdom realm campus bar cafe restaurant hotel warehouse factory prison church temple port airport dock shipyard farm ranch estate manor castle palace apartment flat house home bunker compound arena stadium theatre theater shop store clinic library courthouse speakeasy vault sector deck level floor ward gate building corridor chamber".split(" "));
+  const WORLD_LOCATION_HEADS = new Set("city town village street road avenue lane drive boulevard square district university school college hospital office room hall lab laboratory annex station base facility tower bridge park forest woods mountain river lake island planet moon country kingdom realm campus bar cafe restaurant hotel warehouse factory prison church temple port airport dock shipyard farm ranch estate manor castle palace apartment flat house home bunker compound arena stadium theatre theater shop store clinic library courthouse speakeasy vault sector deck level floor ward gate building corridor chamber museum exhibit gallery observatory archive archives".split(" "));
   const WORLD_LOCATION_PREFIXES = new Set("room sector deck level floor ward gate building vault chamber corridor zone block platform bay cell suite".split(" "));
   const WORLD_ORG_HEADS = new Set("company corporation corp agency department council guild team order faction organization organisation committee institute foundation government commission society board police army navy fleet club alliance coalition syndicate network authority directorate bureau ministry collective academy association consortium command service services group".split(" "));
   const WORLD_ITEM_HEADS = new Set("key keycard ring sword blade knife gun pistol rifle weapon amulet book journal diary notebook letter note photo photograph device artifact relic crown necklace pendant phone watch badge card chip drive disk datapad tablet laptop box case bag backpack bottle vial serum crystal stone gem map compass file folder document suit armor armour mask helmet receiver relay beacon token coin locket bracelet cup mug glass package parcel envelope tool scanner transmitter recorder module core sample capsule injector gauntlet staff wand".split(" "));
   const WORLD_VEHICLE_HEADS = new Set("car truck bike motorcycle ship shuttle craft vehicle jet plane aircraft helicopter train boat yacht cruiser freighter rover speeder van bus transport carrier frigate corvette fighter bomber pod capsule".split(" "));
   const WORLD_EVENT_HEADS = new Set("war battle attack incident disaster festival ceremony graduation funeral wedding election uprising rebellion invasion massacre crisis summit trial tournament accident explosion fire collapse siege operation mission catastrophe coronation conference".split(" "));
   const WORLD_META_BLOCK = new Set("chapter scene episode act part prologue epilogue title note notes author system user assistant narrator prompt input output context memory recap summary story scenario details comments update updates".split(" "));
+  const LEGACY_BAD_ENTITY_LABELS = new Set("name alias aliases age birthday role appearance power powers personality relationship relationships status designation type history known rule era start current family notes note entry keys key trigger triggers description".split(" "));
+  const WORLD_FORBIDDEN_SINGLE = new Set("the a an this that these those not no yes around through toward towards into onto inside outside near at in on to from with by for of over under beside behind before after then now here there someone somebody anyone anybody everyone everybody everything something anything nothing it its he him his she her hers they them their theirs we us our ours you your yours i me my mine who whom whose which what when where why how and or but if because while although though as just very really still only even also already again away back out up down off all any each every either neither both another other same own such more most less least many much few several one two three four five six seven eight nine ten".split(" "));
+  const WORLD_LEADING_NOISE = /^(?:(?:around|through|toward|towards|into|onto|inside|outside|near|at|in|on|to|from|with|by|for|of|over|under|beside|behind|before|after)\s+)+(?:the\s+|a\s+|an\s+)?/i;
   const WORLD_ACRONYM_PATTERN = "(?:[A-Z](?:\\.[A-Z]){1,}\\.?|[A-Z]{2,}(?:[- ][A-Z0-9]{2,})*)";
   const WORLD_NAMED_PATTERN = "(?:" + WORLD_ACRONYM_PATTERN + "|[A-Z][A-Za-z0-9]*[-][A-Z0-9][A-Za-z0-9-]*|" + DETECT_PROPER_PATTERN.slice(1,-1) + ")";
   const MONTH_INDEX = { january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11 };
@@ -6606,6 +6625,137 @@ const EIDETIC = (() => {
       return w.replace(/^[a-zà-öø-ÿā-ž]/,m=>m.toUpperCase());
     }).join(" ");
   }
+  function singleTokenMatchesKnownCharacterInRoot(r,name) {
+    const n=worldNorm(name); if(!r||!n||n.indexOf(" ")>=0)return false;
+    const keys=Object.keys(r.chars||{});
+    for(let i=0;i<keys.length;i++){
+      const ch=r.chars[keys[i]]||{}, forms=[ch.name].concat(ch.aliases||[]);
+      for(let j=0;j<forms.length;j++){
+        const bits=normName(forms[j]).split(" ").filter(Boolean);
+        if(bits.indexOf(n)>=0)return true;
+      }
+    }
+    return false;
+  }
+  function singleTokenMatchesKnownCharacter(name) { return singleTokenMatchesKnownCharacterInRoot(root(),name); }
+  function sanitizeWorldSurface(name, force) {
+    let x=cleanText(name).replace(/^[,;:.\-\s]+|[,;:.\-\s]+$/g,"");
+    if(!x)return"";
+    if(!force){
+      let prev="";
+      while(prev!==x){
+        prev=x;
+        x=x.replace(WORLD_LEADING_NOISE,"").replace(/^(?:the|a|an|this|that|these|those)\s+/i,"").trim();
+      }
+    }
+    return x.replace(/\s+/g," ").trim();
+  }
+  function worldSurfaceLooksNamed(name) {
+    const x=safeText(name).trim();
+    return /^[A-ZÀ-ÖØ-ÞĀ-Ž0-9]/.test(x) || /(?:[A-Z](?:\.[A-Z]){1,}\.?|[A-Z]{2,}(?:[- ][A-Z0-9]{2,})*)/.test(x) || /[A-Z0-9]+-[A-Z0-9]+/.test(x);
+  }
+  function worldGenericPhrase(name,type) {
+    const n=worldNorm(name), bits=n.split(/\s+/).filter(Boolean); if(!bits.length)return true;
+    const head=bits[bits.length-1];
+    const typed=(type==="location"&&(WORLD_LOCATION_HEADS.has(head)||WORLD_LOCATION_PREFIXES.has(bits[0])))||
+      (type==="organization"&&WORLD_ORG_HEADS.has(head))||(type==="item"&&WORLD_ITEM_HEADS.has(head))||
+      (type==="vehicle"&&WORLD_VEHICLE_HEADS.has(head))||(type==="event"&&WORLD_EVENT_HEADS.has(head));
+    return !!typed && !worldSurfaceLooksNamed(name);
+  }
+  function persistedWorldEntityInvalid(e,r) {
+    if(!e||!e.name)return true;
+    const n=worldNorm(e.name), bits=n.split(/\s+/).filter(Boolean);
+    if(bits.length===1&&LEGACY_BAD_ENTITY_LABELS.has(bits[0]))return true;
+    if(/story-card|manual|config/i.test(safeText(e.source)))return false;
+    if(!bits.length)return true;
+    if(bits.length===1&&WORLD_FORBIDDEN_SINGLE.has(bits[0]))return true;
+    if(WORLD_META_BLOCK.has(bits[0]))return true;
+    if(WORLD_LEADING_NOISE.test(safeText(e.name)))return true;
+    if(e.type!=="character"&&bits.length===1&&singleTokenMatchesKnownCharacterInRoot(r,e.name))return true;
+    if(!/story-card|manual|config/i.test(safeText(e.source)) && bits.length===1 && worldGenericSingle(e.name,e.type)) return true;
+    return false;
+  }
+  function sanitizePersistedDetectionState(r) {
+    if(!r||!r.world)return;
+    const bad=new Set();
+    Object.keys(r.world.entities||{}).forEach(k=>{ if(persistedWorldEntityInvalid(r.world.entities[k],r))bad.add(k); });
+    bad.forEach(k=>delete r.world.entities[k]);
+    r.world.facts=(r.world.facts||[]).filter(f=>{
+      if(!f||f.slot==="history"||bad.has(f.entity))return false;
+      if(f.slot==="profile"&&/story-card/i.test(safeText(f.src)))return false;
+      if(f.manual)return true;
+      const ent=r.world.entities&&r.world.entities[f.entity];
+      if(!ent)return false;
+      const src=entityPatternFromRecord(ent); if(!src)return false;
+      const E="(?:"+src+")", text=cleanText(f.text);
+      const direct=(patterns)=>{
+        for(let i=0;i<patterns.length;i++)if(new RegExp(patterns[i].replace(/\{E\}/g,E),"i").test(text))return true;
+        return false;
+      };
+      if(ent.type==="character"&&f.slot==="status")return direct([
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|remains|became|becomes|has become)\\s+(?:now\\s+|currently\\s+|still\\s+)?(?:dead|alive|resurrected|revived|missing|injured|wounded|pregnant|unconscious|awake|ill|sick|healthy|retired|imprisoned|incarcerated|hospitalized|hospitalised)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:dies|died|recovers|recovered)\\b",
+        "\\b(?:kills?|killed|murders?|murdered)\\s+(?:the\\s+)?{E}(?=$|[^A-Za-z0-9])"
+      ]);
+      if(ent.type==="character"&&f.slot==="location")return direct([
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:lives?|resides?|stays?)\\s+(?:in|at|on|near|with)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:moved|moves|relocated)\\s+(?:to|into|back to)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was)\\s+(?:now\\s+|currently\\s+)?(?:based|located)\\s+(?:in|at|on|near)\\b"
+      ]);
+      if((ent.type==="item"||ent.type==="vehicle")&&f.slot==="owner")return direct([
+        "\\b(?:owns?|has|carries|keeps|holds|wears|receives|accepts|takes|took|picks up|picked up|steals|stole|pockets?|pocketed)\\s+(?:the\\s+|a\\s+|an\\s+)?{E}(?=$|[^A-Za-z0-9])",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was)\\s+(?:owned|carried|held|kept|worn)\\s+by\\b",
+        "\\b(?:gives|gave|gifted|hands|handed|passes|passed)\\s+(?:the\\s+|a\\s+|an\\s+)?{E}\\s+to\\b",
+        "\\b(?:gives|gave|gifted|hands|handed|passes|passed)\\s+(?:him|her|them|[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'’.-]*(?:\\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'’.-]*){0,3})\\s+(?:the\\s+|a\\s+|an\\s+)?{E}(?=$|[^A-Za-z0-9])"
+      ]);
+      if((ent.type==="item"||ent.type==="vehicle")&&f.slot==="location")return direct([
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|has been)\\s+(?:hidden|stored|placed|put|buried|locked|left)\\s+(?:in|inside|at|under|beneath|within|on)\\b",
+        "\\b(?:hide|hides|hid|store|stores|stored|place|places|placed|put|puts|bury|buries|buried|lock|locks|locked|leave|leaves|left)\\s+(?:the\\s+|a\\s+|an\\s+)?{E}\\s+(?:in|inside|at|under|beneath|within|on)\\b"
+      ]);
+      if((ent.type==="item"||ent.type==="vehicle")&&f.slot==="condition")return direct([
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|has been|gets?|got)\\s+(?:lost|found|stolen|destroyed|broken|damaged|repaired|restored|missing|vaporised|vaporized|obliterated)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:(?:simply|just|suddenly|completely|effectively)\\s+)?(?:ceases?|ceased)\\s+to\\s+exist\\b",
+        "\\b(?:destroyed|broke|broken|damaged|repaired|restored|vaporised|vaporized|obliterated)\\s+(?:the\\s+|a\\s+|an\\s+)?{E}(?=$|[^A-Za-z0-9])"
+      ]);
+      // Keep other structured slots only if they still contain their entity and a meaningful predicate.
+      if(ent.type==="location"&&f.slot==="condition")return direct([
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|has been|gets?|got)\\s+(?:destroyed|demolished|collapsed|burned down|burnt down|damaged|rebuilt|repaired|restored|closed|opened|reopened|abandoned|occupied|captured|evacuated|flooded)\\b"
+      ]);
+      if(ent.type==="organization"&&f.slot==="status")return direct([
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|has been|became)\\s+(?:formed|founded|created|disbanded|dissolved|destroyed|collapsed|active|inactive|banned)\\b"
+      ]);
+      return /story-card|manual/i.test(safeText(f.src));
+    });
+    r.world.timeline=(r.world.timeline||[]).map(e=>{
+      if(!e)return e;
+      if(Array.isArray(e.entities))e.entities=e.entities.filter(k=>!bad.has(k));
+      return e;
+    }).filter(e=>{
+      if(!e)return false;
+      if(e.manual||/story-card|manual/i.test(safeText(e.src)))return true;
+      if(/^(?:time-gap|current-date|time-marker)$/.test(safeText(e.category)))return true;
+      const base=safeText(e.category).replace(/^(?:reported|uncertain)-/,"");
+      const strict=strictEventCategory(e.text);
+      const hasNamedEvent=(e.entities||[]).some(k=>r.world.entities[k]&&r.world.entities[k].type==="event");
+      return !!strict || (base==="event"&&hasNamedEvent);
+    });
+    const ckeys=Object.keys(r.chars||{});
+    for(let i=0;i<ckeys.length;i++){
+      const k=ckeys[i], ch=r.chars[k]||{}, src=safeText(ch.lastSource);
+      const n=normName(ch.name), bits=n.split(" ").filter(Boolean);
+      if(bits.length===1&&LEGACY_BAD_ENTITY_LABELS.has(bits[0])){
+        delete r.chars[k]; delete r.scene[k]; delete r.candidates[k]; continue;
+      }
+      if(/story-card|config|manual/i.test(src))continue;
+      if((bits.length===1&&(WORLD_FORBIDDEN_SINGLE.has(bits[0])||STOPWORDS.has(bits[0])||NAME_BLOCKLIST.has(bits[0])))||detectionPenalty(ch.name)>=10){
+        delete r.chars[k]; delete r.scene[k]; delete r.candidates[k];
+      }
+    }
+    Object.keys(r.world.candidates||{}).forEach(k=>{ const c=r.world.candidates[k]||{}; const n=worldNorm(c.name||k), bits=n.split(/\s+/); if((bits.length===1&&WORLD_FORBIDDEN_SINGLE.has(bits[0]))||WORLD_META_BLOCK.has(bits[0]))delete r.world.candidates[k]; });
+    r.runtime.lastWorldEntities=(r.runtime.lastWorldEntities||[]).filter(k=>r.world.entities[k]);
+    r.runtime.recallCacheKey=""; r.runtime.recallCacheBlock=""; r.runtime.recallPayloadSig="";
+  }
+
   function worldTypeFromCard(type) {
     type=safeText(type).toLowerCase();
     if (/character|npc|person|people|cast/.test(type)) return "character";
@@ -6643,9 +6793,12 @@ const EIDETIC = (() => {
   }
   function worldCandidatePlausible(name,type) {
     const n=worldNorm(name); if(!n||n.length<2||n.length>96)return false;
-    const bits=n.split(/\s+/); if(bits.some(x=>IDENTITY_ABSOLUTE.has(x)))return false;
+    const bits=n.split(/\s+/).filter(Boolean); if(!bits.length||bits.some(x=>IDENTITY_ABSOLUTE.has(x)))return false;
+    if(bits.length===1&&WORLD_FORBIDDEN_SINGLE.has(bits[0]))return false;
     if(WORLD_META_BLOCK.has(bits[0]))return false;
-    if(type==="unknown" && (bits.length===1 && (STOPWORDS.has(n)||DETECT_HARD_SINGLE.has(n)))) return false;
+    if(WORLD_LEADING_NOISE.test(safeText(name)))return false;
+    if(type!=="character"&&bits.length===1&&singleTokenMatchesKnownCharacter(name))return false;
+    if(type==="unknown" && bits.length===1 && (STOPWORDS.has(n)||DETECT_HARD_SINGLE.has(n)||DETECT_SOFT_SINGLE.has(n))) return false;
     return /[A-Za-zÀ-ÖØ-öø-ÿĀ-ſ0-9]/.test(name);
   }
   function worldLooksNamed(name) {
@@ -6689,7 +6842,7 @@ const EIDETIC = (() => {
   }
   function ensureWorldEntity(name,type,source,aliases,force,evidence) {
     const w=worldRoot(), r=root(); if (!w || !EIDETIC_CONFIG.ENABLE_WORLD_MEMORY) return null;
-    name=cleanText(name).replace(/^[,;:.\-\s]+|[,;:.\-\s]+$/g,""); if (!name) return null;
+    name=sanitizeWorldSurface(name,!!force); if (!name) return null;
     type=type||classifyWorldName(name,"")||"unknown";
     if(type==="character"){const ck=getCharKey(name);if(ck)name=r.chars[ck].name;else if(!force)return null;}
     if(!worldCandidatePlausible(name,type)) { r.stats.worldCandidateRejected=Number(r.stats.worldCandidateRejected||0)+1; return null; }
@@ -6701,10 +6854,11 @@ const EIDETIC = (() => {
     }
     if(!e && !force){
       const ev=evidence&&typeof evidence==="object"?evidence:{score:1,strong:0,reason:source||"text"};
-      const nk=worldNorm(name), c=w.candidates[nk]||{name,hits:0,last:0,lastHitTurn:-1,scores:{},strong:{},reasons:{}};
-      const turn=currentTurn();
-      if(c.lastHitTurn!==turn)c.hits=Number(c.hits||0)+1;
-      c.lastHitTurn=turn;c.last=turn;c.name=c.name||name;
+      const nk=worldNorm(name), c=w.candidates[nk]||{name,hits:0,observations:0,last:0,lastObservation:"",scores:{},strong:{},reasons:{}};
+      const turn=currentTurn(), obsId=safeText(ev.obs)||("turn:"+turn+":"+safeText(ev.reason));
+      if(c.lastObservation!==obsId)c.hits=Number(c.hits||0)+1;
+      c.observations=Number(c.observations||0)+1;
+      c.lastObservation=obsId;c.last=turn;c.name=c.name||name;
       c.scores[type]=Number(c.scores[type]||0)+Math.max(0,Number(ev.score||0));
       c.strong[type]=Math.max(Number(c.strong[type]||0),Number(ev.strong||0));
       c.reasons[type]=Array.isArray(c.reasons[type])?c.reasons[type]:[];
@@ -6712,7 +6866,8 @@ const EIDETIC = (() => {
       w.candidates[nk]=c;r.stats.worldCandidateObserved=Number(r.stats.worldCandidateObserved||0)+1;
       const ranked=Object.keys(c.scores).filter(t=>t!=="unknown").sort((a,b)=>Number(c.scores[b]||0)-Number(c.scores[a]||0));
       const top=ranked[0], second=ranked[1], topScore=Number(c.scores[top]||0), secondScore=Number(c.scores[second]||0), topStrong=Number(c.strong[top]||0);
-      const generic=worldGenericSingle(name,top);
+      const generic=worldGenericSingle(name,top)||worldGenericPhrase(name,top);
+      const repeatedEvidence=!generic && Number(c.observations||0)>=2 && topScore>=EIDETIC_CONFIG.WORLD_ENTITY_PROMOTION_SCORE*2;
       const strongEnough=topStrong>=EIDETIC_CONFIG.WORLD_ENTITY_STRONG_SCORE && (!generic || c.hits>=2);
       const accumulated=c.hits>=EIDETIC_CONFIG.WORLD_ENTITY_PROMOTION_HITS && topScore>=EIDETIC_CONFIG.WORLD_ENTITY_PROMOTION_SCORE;
       const margin=topScore-secondScore;
@@ -6745,7 +6900,7 @@ const EIDETIC = (() => {
       }
       if (!name) continue;
       const wk=ensureWorldEntity(name,type,"story-card",keys.slice(1),true);
-      if (wk && entry) addWorldFactRecord(wk,"profile",entry,new Set(["*"]),0,"story-card","story-card:"+hash(entry),"event",true);
+      // Story Card content remains native Story Card context; EIDETIC seeds identity/type only.
     }
     r.runtime.worldCardSig=sig;
   }
@@ -6764,24 +6919,35 @@ const EIDETIC = (() => {
     for (let i=0;i<chars.length;i++) { const ch=r.chars[chars[i]]; if (!ch) continue; const k=ensureWorldEntity(ch.name,"character","character-memory",ch.aliases,true); if (k&&!seen.has(k)){seen.add(k);out.push(k);} }
     return out;
   }
-  function worldEvidenceFromText(text) {
-    const map=Object.create(null);
+  function worldNamedEventValid(name) {
+    const raw=cleanText(name); if(!raw)return false;
+    const bits=raw.split(/\s+/).filter(Boolean), low=bits.map(x=>x.toLowerCase().replace(/[^a-z-]/g,""));
+    if(bits.length<2||bits.length>7)return false;
+    const forbidden=new Set("is was are were be been being has have had do does did destroyed damaged killed murdered opened closed moved returned arrived by with from into during because while after before".split(" "));
+    if(low.some(x=>forbidden.has(x)))return false;
+    const hasHead=low.some(x=>WORLD_EVENT_HEADS.has(x));
+    if(!hasHead)return false;
+    let named=0;
+    for(let i=0;i<bits.length;i++){
+      if(/^[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ0-9'’.-]*$/.test(bits[i]) || /^[A-Z0-9][A-Z0-9.-]{1,}$/.test(bits[i]))named++;
+    }
+    return named>=1;
+  }
+  function worldEvidenceFromText(text, observationId) {
+    const map=Object.create(null), observationHash=safeText(observationId)||hash(cleanText(text));
     const add=(name,type,score,strong,reason)=>{
-      name=cleanText(name).replace(/^(?:the|a|an)\s+/i,"").replace(/^[,;:.\-\s]+|[,;:.\-\s]+$/g,"");
+      name=sanitizeWorldSurface(name,false);
       if(!name||!worldCandidatePlausible(name,type))return;
+      if(/^(?:location-context|vehicle-use|organization-membership|named-event)$/.test(reason)&&!worldSurfaceLooksNamed(name)&&!worldGenericPhrase(name,type))return;
       const k=worldNorm(name)+"|"+type;
       if(worldGenericSingle(name,type)){score=Math.min(score,5);strong=Math.min(strong,5);}
       const prev=map[k];
-      if(!prev||score>prev.score||strong>prev.strong)map[k]={name,type,score,strong,reason};
+      if(!prev||score>prev.score||strong>prev.strong)map[k]={name,type,score,strong,reason,obs:observationHash};
     };
     let m;
-    const proper=new RegExp("\\b"+DETECT_PROPER_PATTERN+"\\b","g");
-    while((m=proper.exec(text))!==null){
-      const raw=m[1]; if(getCharKey(raw)){add(raw,"character",12,12,"known-character");continue;}
-      const type=classifyWorldName(raw,text);
-      if(type)add(raw,type,6,0,"typed-proper"); else add(raw,"unknown",1,0,"untyped-proper");
-    }
-
+    // Precision mode deliberately does not harvest arbitrary capitalized phrases.
+    // Existing known characters are resolved separately; new world entities need typed evidence
+    // such as movement into a place, possession of an item, vehicle use, membership, or an event form.
     const locHead=Array.from(WORLD_LOCATION_HEADS).concat(Array.from(WORLD_LOCATION_PREFIXES)).sort((a,b)=>b.length-a.length).join("|");
     const itemHead=Array.from(WORLD_ITEM_HEADS).sort((a,b)=>b.length-a.length).join("|");
     const vehHead=Array.from(WORLD_VEHICLE_HEADS).sort((a,b)=>b.length-a.length).join("|");
@@ -6822,11 +6988,11 @@ const EIDETIC = (() => {
 
     return Object.keys(map).map(k=>map[k]).sort((a,b)=>b.score-a.score||b.strong-a.strong);
   }
-  function discoverWorldEntities(text) {
+  function discoverWorldEntities(text, observationId) {
     if (!EIDETIC_CONFIG.ENABLE_WORLD_MEMORY) return [];
-    const found=[], evidence=worldEvidenceFromText(text);
+    const found=[], evidence=worldEvidenceFromText(text, observationId);
     for(let i=0;i<evidence.length;i++){
-      const ev=evidence[i], k=ensureWorldEntity(ev.name,ev.type,"text",null,ev.type==="character",{score:ev.score,strong:ev.strong,reason:ev.reason});
+      const ev=evidence[i], k=ensureWorldEntity(ev.name,ev.type,"text",null,ev.type==="character",{score:ev.score,strong:ev.strong,reason:ev.reason,obs:ev.obs});
       if(k&&found.indexOf(k)<0)found.push(k);
     }
     pruneWorldCandidates();
@@ -6894,19 +7060,137 @@ const EIDETIC = (() => {
     if(w.facts.length>fl){ const n=w.facts.length-fl; w.facts.splice(0,n); root().stats.worldPruned=Number(root().stats.worldPruned||0)+n; }
     if(w.timeline.length>tl){ const n=w.timeline.length-tl; w.timeline.splice(0,n); root().stats.worldPruned=Number(root().stats.worldPruned||0)+n; recomputeWorldClock(); }
   }
-  function worldFactSlots(type,text) {
-    const t=cleanText(text).toLowerCase(), out=[],add=x=>{if(out.indexOf(x)<0)out.push(x)};
-    if(type==="character") { if(/\b(?:dies|died|dead|killed|murdered|alive|resurrected|revived|missing|injured|wounded|pregnant|retired|imprisoned)\b/.test(t))add("status"); if(/\b(?:lives?|moved|relocated|based|located|home|address)\b/.test(t))add("location"); if(/\b(?:works? as|became|promoted|job|role|student|lawyer|doctor|teacher|engineer|officer)\b/.test(t))add("role"); if(/\b(?:married|divorced|engaged|dating|partner|estranged|separated)\b/.test(t))add("relationship"); if(/\b(?:years old|birthday|turns? \d{1,3}|aged? \d{1,3})\b/.test(t))add("age"); }
-    else if(type==="location") { if(/\b(?:destroyed|collapsed|burned|burnt|damaged|rebuilt|repaired|restored|closed|opened|abandoned|occupied|captured|evacuated|flooded)\b/.test(t))add("condition"); if(/\b(?:owned by|controlled by|captured by|occupied by|belongs to)\b/.test(t))add("control"); }
-    else if(type==="item"||type==="vehicle") { if(/\b(?:has|owns|carries|keeps|holds|wears|pockets|receives|accepts|takes|took|taken|picks up|picked up|gives|gave|given|gifted|hands|handed|passes|passed|steals|stole|stolen)\b/.test(t))add("owner"); if(/\b(?:left|hidden|hid|stored|kept|placed|put|buried|locked|inside|at|in)\b/.test(t))add("location"); if(/\b(?:lost|found|stolen|destroyed|broken|damaged|repaired|restored|missing)\b/.test(t))add("condition"); }
-    else if(type==="organization") { if(/\b(?:formed|founded|created|disbanded|dissolved|destroyed|collapsed|active|inactive|banned)\b/.test(t))add("status"); if(/\b(?:led by|leader|director|president|commander|head of)\b/.test(t))add("leadership"); }
-    else if(type==="event") add("event");
-    if(!out.length&&importance(text)>=4)add("history"); return out.slice(0,4);
+  function worldEntityAliasSource(entityKey) {
+    const w=worldRoot(), e=w&&w.entities? w.entities[entityKey]:null; if(!e)return"";
+    const forms=[e.name].concat(e.aliases||[]).filter(Boolean).sort((a,b)=>b.length-a.length);
+    return forms.map(escapeRe).join("|");
   }
-  function worldEventCategory(text) {
-    const t=cleanText(text).toLowerCase();
-    if(/\b(?:resurrected|revived|returned from the dead)\b/.test(t))return"resurrection"; if(/\b(?:dies|died|death|dead|killed|murdered|funeral)\b/.test(t))return"death"; if(/\b(?:born|gave birth|birth)\b/.test(t))return"birth"; if(/\b(?:married|wedding|divorced|engaged|broke up|break up)\b/.test(t))return"relationship"; if(/\b(?:rebuilt|repaired|restored|reopened)\b/.test(t))return"restoration"; if(/\b(?:destroyed|collapsed|burned|burnt|exploded)\b/.test(t))return"destruction"; if(/\b(?:moved|relocated|left home|arrived|returned)\b/.test(t))return"move"; if(/\b(?:lost|stolen|found|gave|gifted|handed|acquired)\b/.test(t))return"item-change"; if(/\b(?:discovered|revealed|learned|found out|confessed)\b/.test(t))return"discovery"; if(/\b(?:war|battle|attack|incident|disaster|festival|ceremony|graduation|election)\b/.test(t))return"event"; return"event";
+  function entityPatternFromRecord(e) {
+    if(!e)return"";
+    const forms=[e.name].concat(e.aliases||[]).map(cleanText).filter(Boolean).sort((a,b)=>b.length-a.length);
+    return forms.length?forms.map(escapeRe).join("|"):"";
   }
+  function entityPattern(entityKey) {
+    const w=worldRoot(), e=w&&w.entities?w.entities[entityKey]:null;
+    return entityPatternFromRecord(e);
+  }
+  function directEntityRelation(text, entityKey, tests, allowPronoun) {
+    const src=entityPattern(entityKey); if(!src)return false;
+    const E="(?:"+src+")";
+    for(let i=0;i<tests.length;i++) {
+      const pat=tests[i].replace(/\{E\}/g,E);
+      if(new RegExp(pat,"i").test(text))return true;
+    }
+    if(allowPronoun && /^(?:he|she|they|it|this place|that place|the building|the room|the item|the object|the weapon|the vehicle)\b/i.test(cleanText(text))) {
+      for(let i=0;i<tests.length;i++) {
+        const p=tests[i].replace(/\{E\}/g,"(?:he|she|they|it|this place|that place|the building|the room|the item|the object|the weapon|the vehicle)");
+        if(new RegExp(p,"i").test(text))return true;
+      }
+    }
+    return false;
+  }
+  function worldFactSlots(type,text,entityKey,entityCount) {
+    const out=[],add=x=>{if(out.indexOf(x)<0)out.push(x)}, pronoun=entityCount===1;
+    if(type==="character") {
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|remains|became|becomes|has become)\\s+(?:now\\s+|currently\\s+|still\\s+)?(?:dead|alive|resurrected|revived|missing|injured|wounded|pregnant|unconscious|awake|ill|sick|healthy|retired|imprisoned|incarcerated|hospitalized|hospitalised)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:dies|died|recovers|recovered)\\b",
+        "\\b(?:kills?|killed|murders?|murdered)\\s+(?:the\\s+)?{E}(?=$|[^A-Za-z0-9])"
+      ],pronoun))add("status");
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:lives?|resides?|stays?)\\s+(?:in|at|on|near|with)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:moved|moves|relocated)\\s+(?:to|into|back to)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was)\\s+(?:now\\s+|currently\\s+)?(?:based|located)\\s+(?:in|at|on|near)\\b",
+        "(?:^|[^A-Za-z0-9]){E}['’]s\\s+(?:home|address|residence)\\s+(?:is|was)\\b"
+      ],pronoun))add("location");
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:works?|serves?)\\s+as\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:became|becomes|is|was|remains)\\s+(?:an?\\s+)?(?:"+DETECT_ROLE_ALT+")\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:was|is)\\s+promoted\\s+to\\b"
+      ],pronoun))add("role");
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|became|becomes|remains)\\s+(?:now\\s+|currently\\s+)?(?:married to|dating|engaged to|friends with|estranged from|divorced from|separated from|in a relationship with|partners? with)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:married|divorced|left|separated from|broke up with)\\b"
+      ],pronoun))add("relationship");
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was)\\s+\\d{1,3}\\s+years?\\s+old\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+turns?\\s+\\d{1,3}\\b",
+        "(?:^|[^A-Za-z0-9]){E}['’]s\\s+birthday\\s+(?:is|was)\\b"
+      ],pronoun))add("age");
+    } else if(type==="location") {
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|has been|gets?|got)\\s+(?:destroyed|demolished|collapsed|burned down|burnt down|damaged|rebuilt|repaired|restored|closed|opened|reopened|abandoned|occupied|captured|evacuated|flooded)\\b",
+        "\\b(?:destroyed|demolished|damaged|rebuilt|repaired|restored|closed|opened|reopened|evacuated|flooded)\\s+(?:the\\s+)?{E}(?=$|[^A-Za-z0-9])"
+      ],pronoun))add("condition");
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was)\\s+(?:owned|controlled|captured|occupied)\\s+by\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+belongs\\s+to\\b"
+      ],pronoun))add("control");
+    } else if(type==="item"||type==="vehicle") {
+      if(directEntityRelation(text,entityKey,[
+        "\\b(?:owns?|has|carries|keeps|holds|wears|receives|accepts|takes|took|picks up|picked up|steals|stole|pockets?|pocketed)\\s+(?:the\\s+|a\\s+|an\\s+)?{E}(?=$|[^A-Za-z0-9])",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was)\\s+(?:owned|carried|held|kept|worn)\\s+by\\b",
+        "\\b(?:gives|gave|gifted|hands|handed|passes|passed)\\s+(?:the\\s+|a\\s+|an\\s+)?{E}\\s+to\\b",
+        "\\b(?:gives|gave|gifted|hands|handed|passes|passed)\\s+(?:him|her|them|[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'’.-]*(?:\\s+[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'’.-]*){0,3})\\s+(?:the\\s+|a\\s+|an\\s+)?{E}(?=$|[^A-Za-z0-9])"
+      ],pronoun))add("owner");
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|has been)\\s+(?:hidden|stored|placed|put|buried|locked|left)\\s+(?:in|inside|at|under|beneath|within|on)\\b",
+        "\\b(?:hide|hides|hid|store|stores|stored|place|places|placed|put|puts|bury|buries|buried|lock|locks|locked|leave|leaves|left)\\s+(?:the\\s+|a\\s+|an\\s+)?{E}\\s+(?:in|inside|at|under|beneath|within|on)\\b"
+      ],pronoun))add("location");
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|has been|gets?|got)\\s+(?:lost|found|stolen|destroyed|broken|damaged|repaired|restored|missing|vaporised|vaporized|obliterated)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:(?:simply|just|suddenly|completely|effectively)\\s+)?(?:ceases?|ceased)\\s+to\\s+exist\\b",
+        "\\b(?:destroyed|broke|broken|damaged|repaired|restored|vaporised|vaporized|obliterated)\\s+(?:the\\s+|a\\s+|an\\s+)?{E}(?=$|[^A-Za-z0-9])"
+      ],pronoun))add("condition");
+    } else if(type==="organization") {
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was|has been|became)\\s+(?:formed|founded|created|disbanded|dissolved|destroyed|collapsed|active|inactive|banned)\\b",
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:formed|founded|disbanded|dissolved|collapsed)\\b"
+      ],pronoun))add("status");
+      if(directEntityRelation(text,entityKey,[
+        "(?:^|[^A-Za-z0-9]){E}\\s+(?:is|was)\\s+(?:led|directed|headed|commanded)\\s+by\\b",
+        "(?:^|[^A-Za-z0-9]){E}['’]s\\s+(?:president|director|commander|leader|head)\\s+(?:is|was)\\b"
+      ],pronoun))add("leadership");
+    } else if(type==="event") add("event");
+    return out.slice(0,4);
+  }
+
+  function strictEventCategory(text) {
+    const t=cleanText(text);
+    if(!t)return"";
+    if(/\b(?:resurrected|revived|returned from the dead)\b/i.test(t))return"resurrection";
+    if(/\b(?:[A-ZÀ-ÖØ-ÞĀ-Ž][\w'’.-]*(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž][\w'’.-]*){0,3}|he|she|they)\s+(?:dies|died)\b/i.test(t) ||
+       /\b(?:was|is|gets?|got)\s+(?:killed|murdered)\b/i.test(t) ||
+       /\b(?:killed|murdered)\s+(?:him|her|them|the\s+[\w'’.-]+|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t))return"death";
+    if(/\b(?:gave birth|was born|is born)\b/i.test(t))return"birth";
+    if(/\b(?:is|was|became|becomes)\s+(?:married to|engaged to|divorced from|separated from)\b/i.test(t) ||
+       /\b(?:married|divorced|broke up with|separated from)\s+(?:him|her|them|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t))return"relationship";
+    if(/\b(?:was|is|has been|gets?|got)\s+(?:rebuilt|repaired|restored|reopened)\b/i.test(t) ||
+       /\b(?:rebuilt|repaired|restored|reopened)\s+(?:the|a|an|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t))return"restoration";
+    if(/\b(?:was|is|has been|gets?|got)\s+(?:destroyed|demolished|vaporised|vaporized|obliterated|burned down|burnt down)\b/i.test(t) ||
+       /\b(?:destroyed|demolished|vaporised|vaporized|obliterated|burned down|burnt down)\s+(?:the|a|an|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t) ||
+       /\b(?:ceases?|ceased)\s+to\s+exist\b/i.test(t))return"destruction";
+    if(/\b(?:was|is|gets?|got)\s+(?:injured|wounded|shot|stabbed|hospitalized|hospitalised)\b/i.test(t) ||
+       /\b(?:injured|wounded|shot|stabbed)\s+(?:him|her|them|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t))return"injury";
+    if(/\b(?:moved|relocated)\s+(?:to|into|back to)\b/i.test(t) ||
+       /\b(?:arrived at|returned to|left home|departed from)\b/i.test(t))return"move";
+    if(/\b(?:gave|gifted|handed|passed)\s+(?:(?:him|her|them|[A-ZÀ-ÖØ-ÞĀ-Ž][\w'’.-]*(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž][\w'’.-]*){0,3})\s+)?(?:the\s+|a\s+|an\s+)?[\w'’.-]+(?:\s+[\w'’.-]+){0,3}(?:\s+to\b|[.!?]?$)/i.test(t) ||
+       /\b(?:pockets?|pocketed)\s+(?:the\s+|a\s+|an\s+)?[\w'’.-]+/i.test(t) ||
+       /\b(?:was|is|has been)\s+(?:lost|stolen|found)\b/i.test(t))return"item-change";
+    if(/\b(?:discovered|learned|found out|confirmed|revealed|confessed)\s+(?:that\b|the\b|a\b|an\b|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t))return"discovery";
+    if(/\b(?:was|is|has been)\s+(?:founded|formed|created|established|closed|dissolved|disbanded)\b/i.test(t) ||
+       /\b(?:founded|formed|established|dissolved|disbanded)\s+(?:the|a|an|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t))return"world-change";
+    return"";
+  }
+
+  function worldEventCategory(text,mode) {
+    const c=strictEventCategory(text);
+    if(!c)return"";
+    if(mode==="claim")return"reported-"+c;
+    if(mode==="belief"||mode==="uncertain")return"uncertain-"+c;
+    return c;
+  }
+
   function applyTemporalMarkers(text,owners,turn,kind,src) {
     if(!EIDETIC_CONFIG.TRACK_STORY_TIME)return; const w=worldRoot(); if(!w)return;
     const gap=parseForwardGapHours(text); if(gap>0){ w.clock.hours+=gap; w.clock.knownElapsed=true; addTimelineRecord(text,[],owners,turn,kind,src,"event","time-gap",w.clock.hours,{deltaHours:gap}); root().stats.timeJumps=Number(root().stats.timeJumps||0)+1; }
@@ -6915,18 +7199,26 @@ const EIDETIC = (() => {
     if(tm && /\b(?:now|today|tonight|this|it is|it's|currently|current time|at\s+\d|morning|afternoon|evening|night|midnight|noon)\b/i.test(text)){ w.clock.currentTimeLabel=tm[1]; addTimelineRecord(text,[],owners,turn,kind,src,"event","time-marker",w.clock.hours,{timeLabel:tm[1]}); }
   }
   function addWorldMemory(text,owners,turn,kind,src,mode) {
-    if(!EIDETIC_CONFIG.ENABLE_WORLD_MEMORY)return; const w=worldRoot(); if(!w||!(mode==="event"||mode==="player-event"||mode==="claim"))return;
-    const discovered=discoverWorldEntities(text), mentioned=worldEntitiesMentioned(text); let entities=Array.from(new Set(discovered.concat(mentioned)));
-    const r=root(); if(!entities.length && /^(?:he|she|they|it|this place|that place|the building|the room|the item|the object|the weapon|the vehicle)\b/i.test(cleanText(text)) && Array.isArray(r.runtime.lastWorldEntities)) entities=r.runtime.lastWorldEntities.slice(0,3);
+    if(!EIDETIC_CONFIG.ENABLE_WORLD_MEMORY)return; const w=worldRoot(); if(!w||!(mode==="event"||mode==="player-event"||mode==="claim"||mode==="belief"||mode==="uncertain"))return;
+    const observationId=safeText(src).split(":")[0];
+    const discovered=discoverWorldEntities(text,observationId), mentioned=worldEntitiesMentioned(text); let entities=Array.from(new Set(discovered.concat(mentioned)));
+    const r=root(); if(!entities.length && /^(?:he|she|they|it|this place|that place|the building|the room|the item|the object|the weapon|the vehicle)\b/i.test(cleanText(text)) && Array.isArray(r.runtime.lastWorldEntities)) entities=r.runtime.lastWorldEntities.slice(0,3).filter(k=>w.entities[k]);
     if(entities.length) r.runtime.lastWorldEntities=entities.slice(0,4);
-    const ago=parseAgoHours(text), eventHours=ago>0?currentStoryHours()-ago:currentStoryHours(), date=parseAbsoluteDate(text), category=worldEventCategory(text);
-    const pending=[]; let hasStateChange=false;
-    for(let i=0;i<entities.length;i++){ const e=w.entities[entities[i]]; if(!e)continue; const slots=worldFactSlots(e.type,text); if(slots.length)hasStateChange=true; pending.push([entities[i],slots]); }
+    const ago=parseAgoHours(text), eventHours=ago>0?currentStoryHours()-ago:currentStoryHours(), date=parseAbsoluteDate(text), allowCurrent=(mode==="event"||mode==="player-event"), pending=[]; let hasStateChange=false, hasEventEntity=false;
+    for(let i=0;i<entities.length;i++){
+      const e=w.entities[entities[i]]; if(!e)continue;
+      if(e.type==="event")hasEventEntity=true;
+      const slots=allowCurrent?worldFactSlots(e.type,text,entities[i],entities.length):[];
+      if(slots.length)hasStateChange=true;
+      pending.push([entities[i],slots]);
+    }
+    let category=worldEventCategory(text,mode); if(!category&&hasEventEntity&&allowCurrent)category="event";
     const routineNegation=/\b(?:routine|ordinary|nothing (?:important|major|in the exchange)|no major|without changing|does not change|doesn't change|harmless|clerical mismatch|same mundane|same as before)\b/i.test(text);
-    const significant=(!routineNegation&&importance(text)>=3)||hasStateChange||ago>0||!!date||category!=="event";
-    if(significant) addTimelineRecord(text,entities,owners,turn,kind,src,mode,category,eventHours,date?{dateLabel:date.label,eventEpochHours:date.epochHours}:{});
-    for(let i=0;i<pending.length;i++) for(let j=0;j<pending[i][1].length;j++) addWorldFactRecord(pending[i][0],pending[i][1][j],text,owners,turn,kind,src,mode,false);
+    const structured=!!category||hasStateChange||(ago>0&&(hasStateChange||hasEventEntity))||(!!date&&(hasStateChange||!!category));
+    if(!routineNegation&&structured) addTimelineRecord(text,entities,owners,turn,kind,src,mode,category||"event",eventHours,date?{dateLabel:date.label,eventEpochHours:date.epochHours}:{});
+    if(allowCurrent) for(let i=0;i<pending.length;i++) for(let j=0;j<pending[i][1].length;j++) addWorldFactRecord(pending[i][0],pending[i][1][j],text,owners,turn,kind,src,mode,false);
   }
+
   function worldRecordOwnerAllows(e,activeOwners) {
     if(!EIDETIC_CONFIG.STRICT_KNOWLEDGE)return true;
     const o=e&&Array.isArray(e.owners)?e.owners:[];
@@ -6937,7 +7229,7 @@ const EIDETIC = (() => {
   }
   function retrieveWorldContinuity(query,plan,limitFacts,limitEvents,activeOwners) {
     const w=worldRoot(); if(!w||!EIDETIC_CONFIG.ENABLE_WORLD_MEMORY)return{facts:[],events:[]}; plan=plan||makeQueryPlan(query); const qkeys=new Set(worldEntitiesMentioned(query)), tokens=plan.lexicalTokens||[], tags=plan.tags||[];
-    const score=(e,isEvent)=>{ if(!worldRecordOwnerAllows(e,activeOwners))return-999; let s=0; const ents=e.entities||(e.entity?[e.entity]:[]); for(let i=0;i<ents.length;i++)if(qkeys.has(ents[i]))s+=8; const kw="|"+safeText(e.k)+"|"; let lm=0; for(let i=0;i<tokens.length;i++){const vs=plan.variants&&plan.variants[tokens[i]]?plan.variants[tokens[i]]:lexicalVariants(tokens[i]);if(keywordMatchesVariants(kw,vs))lm++;} s+=lm*2.7; for(let i=0;i<tags.length;i++)if(kw.indexOf("|"+tags[i]+"|")>=0)s+=1.2; if(/\b(?:die|died|death|dead|killed)\b/i.test(query)&&e.category==="death")s+=10; if(/\b(?:how long|ago|when)\b/i.test(query)&&Number.isFinite(e.storyHours))s+=4; if(isEvent&&e.category!=="event")s+=1.5; if(!plan.explicitRecall&&!qkeys.size&&!lm&&s<2)return-999; return s; };
+    const score=(e,isEvent)=>{ if(!worldRecordOwnerAllows(e,activeOwners))return-999; let s=0; const ents=e.entities||(e.entity?[e.entity]:[]); for(let i=0;i<ents.length;i++)if(qkeys.has(ents[i]))s+=8; const kw="|"+safeText(e.k)+"|"; let lm=0; for(let i=0;i<tokens.length;i++){const vs=plan.variants&&plan.variants[tokens[i]]?plan.variants[tokens[i]]:lexicalVariants(tokens[i]);if(keywordMatchesVariants(kw,vs))lm++;} s+=lm*2.7; for(let i=0;i<tags.length;i++)if(kw.indexOf("|"+tags[i]+"|")>=0)s+=1.2; if(/\b(?:die|died|death|dead|killed)\b/i.test(query)&&/death$/.test(safeText(e.category)))s+=e.category==="death"?10:5; if(/\b(?:how long|ago|when)\b/i.test(query)&&Number.isFinite(e.storyHours))s+=4; if(isEvent&&e.category!=="event")s+=1.5; if(!plan.explicitRecall&&!qkeys.size&&!lm&&s<2)return-999; return s; };
     const facts=[],seen=new Set(); for(let i=w.facts.length-1;i>=0;i--){const e=w.facts[i];if(!e)continue;const k=e.entity+"|"+e.slot;if(seen.has(k))continue;seen.add(k);const sc=score(e,false);if(sc>=2)facts.push({e,sc});}
     const events=[]; for(let i=w.timeline.length-1;i>=0;i--){const e=w.timeline[i];if(!e||e.category==="time-gap"||e.category==="current-date")continue;const sc=score(e,true);if(sc>=2)events.push({e,sc});}
     facts.sort((a,b)=>b.sc-a.sc||b.e.turn-a.e.turn);events.sort((a,b)=>b.sc-a.sc||b.e.turn-a.e.turn);
@@ -6967,7 +7259,7 @@ const EIDETIC = (() => {
       const currentAbs=Number.isFinite(w.clock.baseEpochHours)?w.clock.baseEpochHours+currentStoryHours():null;
       if(Number.isFinite(currentAbs)&&Number.isFinite(e.eventEpochHours)) { const diff=currentAbs-e.eventEpochHours; if(diff>0)age=formatDurationHours(diff)+" ago"; }
       if(!age)age=relativeAgeLabel(e.storyHours);
-      const when=age&&age!=="now"?age:(e.dateLabel||("T"+e.turn)); lines.push("• "+safeText(e.category).toUpperCase()+" — "+when+": "+displayText(e.text,245));
+      const when=age&&age!=="now"?age:(e.dateLabel||("T"+e.turn)); const evLabel=e.mode&&e.mode!=="event"&&e.mode!=="player-event"?" ["+modeLabel(e)+"]":""; lines.push("• "+safeText(e.category).replace(/-/g," ").toUpperCase()+evLabel+" — "+when+": "+displayText(e.text,245));
     }
     return lines;
   }
@@ -7199,9 +7491,9 @@ const EIDETIC = (() => {
     if (!cleaned) return;
 
     discover(cleaned);
-    const wholeMode = epistemicMode(cleaned, kind);
-    if (wholeMode === "event" || wholeMode === "player-event" || wholeMode === "claim") discoverWorldEntities(cleaned);
     const srcHash = hash(kind + "|" + cleaned);
+    const wholeMode = epistemicMode(cleaned, kind);
+    if (wholeMode === "event" || wholeMode === "player-event" || wholeMode === "claim") discoverWorldEntities(cleaned,srcHash);
 
     if (kind === "input") {
       const existingSources = sameTurnSources(turn, "input");
@@ -7377,6 +7669,7 @@ const EIDETIC = (() => {
         if (!charKey || plan.names[i] !== charKey) topicalEntityMatches++;
       }
     }
+    if (!plan.explicitRecall && plan.temporal === "neutral" && lexicalMatches + topicalEntityMatches + strongTagMatches === 0 && recImportance(e) < 4) return -999;
     if (plan.explicitRecall || plan.temporal !== "neutral") {
       if (plan.currentStateLookup && tags.some(t => t !== "@time") && strongTagMatches === 0) return -999;
       if (plan.currentStateLookup && tags.indexOf("@location") >= 0) {
@@ -7534,30 +7827,49 @@ const EIDETIC = (() => {
     return all.slice(0, Math.max(1, cap));
   }
 
+  function storyCardIdentityName(entry) {
+    const t=cleanText(entry||""); if(!t)return"";
+    let m=t.match(/(?:^|[|\n])\s*Name\s*[:=-]\s*([^|\n;]+)/i);
+    if(m){
+      let cand=cleanText(m[1]);
+      cand=cand.split(/\s+(?=(?:Alias|Aliases|Birthday|Age|Role|Appearance|Powers?|Personality|Relationships?|Status|Designation|Type|History|Known|Rule|Era|Start|Current|Family)\s*:)/i)[0];
+      cand=cand.split(/\s+[—–]\s+/)[0];
+      cand=cand.replace(/[,;:]+$/,"").trim();
+      if(isPlausibleName(cand,true)&&detectionPenalty(cand)<8)return cand;
+    }
+    m=t.match(/^([A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+(?:\s+(?:(?:de\s+la|de|del|della|di|da|dos|das|du|la|le|van|von|der|den|ter|ten|al|bin|ibn|ap|ben)\s+)?[A-ZÀ-ÖØ-ÞĀ-Ž][A-Za-zÀ-ÖØ-öø-ÿĀ-ſ'\-]+){0,3})\s+is\b/);
+    return m&&isPlausibleName(m[1],true)&&detectionPenalty(m[1])<8?m[1]:"";
+  }
+
+  function safeStoryCardSeed(entry,ch) {
+    const raw=cleanText(entry||""); if(!raw)return"";
+    const segments=raw.split(/\s*[|\n]\s*/).map(x=>x.trim()).filter(Boolean), keep=[];
+    const safeField=/^(?:Name|Alias|Aliases|Age|Birthday|Role|Appearance|Powers?|Personality|Relationships?)\s*[:=-]/i;
+    const future=/\b(?:future|eventually|later returns?|will return|will become|should enter|if .* returns?|hidden|creator-canon override|future chronology|not yet)\b/i;
+    for(let i=0;i<segments.length&&keep.length<5;i++) if(safeField.test(segments[i])&&!future.test(segments[i]))keep.push(segments[i]);
+    if(!keep.length){
+      const first=(raw.match(/^[^.!?]+[.!?]?/)||[])[0]||"";
+      if(first&&ch&&new RegExp("^\\s*"+escapeRe(ch.name)+"\\b","i").test(first)&&!future.test(first))keep.push(first.trim());
+    }
+    return displayText(keep.join(" | "),EIDETIC_CONFIG.CARD_SEED_CHARS);
+  }
   function relevantCardSeeds(activeKeys) {
     if (!EIDETIC_CONFIG.INCLUDE_RELEVANT_CARD_SEEDS || typeof storyCards === "undefined" || !Array.isArray(storyCards)) return [];
-    const out = [];
+    const out = [], r=root();
     for (let ai = 0; ai < activeKeys.length; ai++) {
-      const key = activeKeys[ai];
-      const r = root();
-      const ch = r && r.chars[key];
-      if (!ch) continue;
+      const key = activeKeys[ai], ch = r && r.chars[key]; if (!ch) continue;
+      const aliases=(ch.aliases&&ch.aliases.length?ch.aliases:[ch.name]).map(normName);
       for (let i = 0; i < storyCards.length && out.length < EIDETIC_CONFIG.MAX_CARD_SEEDS; i++) {
-        const c = storyCards[i] || {};
-        const type = safeText(c.type).toLowerCase();
-        if (!/character|npc|person|people|cast/.test(type)) continue;
-        const keys = splitKeys(c.keys).map(x => x.trim().toLowerCase());
-        const entry = cleanText(c.entry != null ? c.entry : c.value);
-        const aliases = (ch.aliases && ch.aliases.length ? ch.aliases : [ch.name]);
-        const matchKey = aliases.some(a => keys.indexOf(normName(a)) >= 0) || keys.indexOf(key) >= 0;
-        const matchEntry = aliases.some(a => new RegExp("(^|[^a-z0-9])" + escapeRe(a) + "([^a-z0-9]|$)", "i").test(entry));
-        if (matchKey || matchEntry) {
-          const seed = displayText(entry, EIDETIC_CONFIG.CARD_SEED_CHARS);
-          if (seed && !out.some(x => x.key === key && x.text === seed)) out.push({ key: key, name: ch.name, text: seed });
-        }
+        const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase(); if(!/character|npc|person|people|cast/.test(type))continue;
+        const keys=splitKeys(c.keys).map(x=>normName(x)).filter(Boolean), entry=cleanText(c.entry!=null?c.entry:c.value), entryName=normName(storyCardIdentityName(entry));
+        const exactAliasKey=aliases.some(a=>keys.indexOf(a)>=0);
+        const exactIdentity=!!entryName&&aliases.indexOf(entryName)>=0;
+        if(!exactAliasKey&&!exactIdentity)continue;
+        if(entryName && !exactIdentity) continue;
+        const seed=safeStoryCardSeed(entry,ch); if(seed&&!out.some(x=>x.key===key&&x.text===seed))out.push({key,name:ch.name,text:seed});
       }
     }
-    return out.slice(0, EIDETIC_CONFIG.MAX_CARD_SEEDS);
+    return out.slice(0,EIDETIC_CONFIG.MAX_CARD_SEEDS);
   }
 
 
@@ -8103,6 +8415,9 @@ const EIDETIC = (() => {
     worldEvidenceFromText: worldEvidenceFromText,
     worldLooksNamed: worldLooksNamed,
     classifyWorldName: classifyWorldName,
+    worldFactSlots: worldFactSlots,
+    worldEventCategory: worldEventCategory,
+    strictEventCategory: strictEventCategory,
   };
 
   return run;
