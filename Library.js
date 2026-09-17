@@ -13,7 +13,7 @@ const EIDETIC_CONFIG = {
   ALWAYS_FOCUS: [],
 
   AUTO_DISCOVER_CHARACTERS: true,
-  DETECTION_MODE: "strict",
+  DETECTION_MODE: "balanced",
   NAME_PROMOTION_HITS: 2,
   NAME_PROMOTION_SCORE: 7,
   NAME_STRONG_PROMOTION_SCORE: 7,
@@ -92,7 +92,7 @@ const EIDETIC_CONFIG = {
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 11;
+  const SCHEMA_REVISION = 12;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -18120,7 +18120,9 @@ const EIDETIC = (() => {
     if (!r.last || typeof r.last !== "object") r.last = {};
     if (!Number.isFinite(r.last.inputTurn)) r.last.inputTurn = -1;
     if (!Number.isFinite(r.last.outputTurn)) r.last.outputTurn = -1;
-    const needsSchemaMigration = (Number(r.schema) || 0) < SCHEMA_REVISION;
+    const previousSchema = Number(r.schema) || 0;
+    const needsSchemaMigration = previousSchema < SCHEMA_REVISION;
+    if (previousSchema > 0 && previousSchema < 12) r.runtime.migrateDetectionDefaultToBalanced = true;
     const needsColdPacking = r.cold.some(x => x && !Array.isArray(x));
     if (needsSchemaMigration || needsColdPacking || Object.prototype.hasOwnProperty.call(r, "v")) {
       r.stats.migrations = (r.stats.migrations || 0) + 1;
@@ -18682,7 +18684,7 @@ const EIDETIC = (() => {
       recallSize: "balanced",
       strictKnowledge: "on",
       autoDetect: "on",
-      detectionMode: "strict",
+      detectionMode: "balanced",
       currentState: "on",
       worldMemory: "on",
       storyTime: "on",
@@ -18751,8 +18753,8 @@ const EIDETIC = (() => {
       "Runs Detection Fortress for characters and world entities. The expanded fortress includes thousands of active rejection, ambiguity, role and world-type rules. Recommended: on.",
       "",
       "detectionMode",
-      "strict = precision-first. Ambiguous capitalized words and generic noun phrases stay episodic until direct evidence proves their type. Recommended.",
-      "balanced = allows slightly earlier promotion at the cost of more false-positive risk.",
+      "strict = maximum precision. Use only if your Scenario produces lots of false character detections.",
+      "balanced = recommended default. Strong human evidence promotes immediately; weaker names can accumulate evidence across turns while the junk fortress still blocks obvious non-people.",
       "",
       "currentState",
       "Tracks what is true now about characters: location, role, status, relationships, abilities, possessions, identity and other changing facts, while preserving older history.",
@@ -18903,6 +18905,10 @@ const EIDETIC = (() => {
     // Preserve user settings from both the new Entry layout and older config-card formats.
     const priorSource = configSettingsSource(c);
     const values = configCardValues(priorSource);
+    if (r && r.runtime && r.runtime.migrateDetectionDefaultToBalanced) {
+      if (configValue(priorSource, "detectionMode") === "strict") values.detectionMode = "balanced";
+      r.runtime.migrateDetectionDefaultToBalanced = false;
+    }
     const panel = configCardEntry(values);
     const guide = configCardNotes();
 
@@ -18957,7 +18963,7 @@ const EIDETIC = (() => {
     EIDETIC_CONFIG.STRICT_KNOWLEDGE = bool("strictKnowledge", true);
     EIDETIC_CONFIG.AUTO_DISCOVER_CHARACTERS = bool("autoDetect", true);
     const detectionMode = configValue(n,"detectionMode");
-    EIDETIC_CONFIG.DETECTION_MODE = detectionMode === "balanced" ? "balanced" : "strict";
+    EIDETIC_CONFIG.DETECTION_MODE = detectionMode === "strict" ? "strict" : "balanced";
     EIDETIC_CONFIG.ENABLE_NARRATIVE_RECALL = bool("narrativeRecall", true);
     EIDETIC_CONFIG.ABSTAIN_ON_EXPLICIT_RECALL_MISS = bool("abstainOnMiss", true);
     EIDETIC_CONFIG.ENABLE_STATE_LEDGER = bool("currentState", true);
@@ -20800,7 +20806,9 @@ const EIDETIC = (() => {
     } finally {
       TURN_OVERRIDE = previousOverride;
     }
-    r.runtime.bootstrapDone = true;
+    // A brand-new Adventure can invoke EIDETIC before history contains a playable action.
+    // Keep bootstrap open in that empty state; the first real input switches to live tracking.
+    if (imported > 0) r.runtime.bootstrapDone = true;
     r.runtime.bootstrapImported = imported;
     r.runtime.recallCacheKey = "";
     r.runtime.recallCacheBlock = "";
@@ -20984,6 +20992,14 @@ const EIDETIC = (() => {
     r.runtime.recallCacheKey = cacheKey;
     r.runtime.recallCacheBlock = block;
     return block;
+  }
+
+  function idleActivationRecallBlock() {
+    const r = root();
+    if (!r || !EIDETIC_CONFIG.ENABLED) return "";
+    return "[[EIDETIC_RECALL turn=" + currentTurn() + " seq=" + (r.seq || 0) + " idle=1]]\n" +
+      "EIDETIC ACTIVE: automatic memory initialized; Story Cards scanned. No played events are stored yet.\n" +
+      "[[/EIDETIC_RECALL]]";
   }
 
   function removeOurFrontMemory(existing) {
@@ -21244,6 +21260,8 @@ const EIDETIC = (() => {
       const command = handleCommand(text);
       if (command) return command;
       ingest(text, "input");
+      // Once real play begins, do not later re-import that same first action from history.
+      if (!r.runtime.bootstrapDone && cleanText(text)) r.runtime.bootstrapDone = true;
       const block = buildRecall(text);
       if (block) setFrontMemory(block);
       else clearFrontMemory(); // Never let a previous turn's packet linger as current front memory.
@@ -21254,6 +21272,11 @@ const EIDETIC = (() => {
     if (hook === "context" || hook === "contextAppend") {
       let block = currentFrontRecallBlock();
       if (!block) block = buildRecall("");
+      if (!block) {
+        const noHistory = (typeof history === "undefined" || !Array.isArray(history) || history.length === 0);
+        const noArchive = !(r.hot && r.hot.length) && !(r.cold && r.cold.length) && !(r.anchors && r.anchors.length) && !(r.ledger && r.ledger.length);
+        if (noHistory && noArchive) block = idleActivationRecallBlock();
+      }
       if (block) {
         setFrontMemory(block);
         if (EIDETIC_CONFIG.APPEND_CONTEXT_FALLBACK && !currentRecallAlreadyInText(text, block)) {
@@ -21312,6 +21335,7 @@ const EIDETIC = (() => {
     addLiveFact: addLiveFact,
     syncLiveStoryCards: syncLiveStoryCards,
     stripEideticNotes: stripEideticNotes,
+    idleActivationRecallBlock: idleActivationRecallBlock,
   };
 
   return run;

@@ -529,3 +529,29 @@ The engine manages one additional hidden-key Story Card, **🧠 EIDETIC — Curr
 This fixes the failure mode where EIDETIC remembered old scenario setup but did not visibly advance Story Cards after played events. Newer played continuity is explicitly marked as overriding stale setup/history, while uncertain conclusions remain labelled uncertain.
 
 Use `/live` to verify the system in an adventure. It reports durable live facts, Character-card Notes writes, continuity-card writes, and a preview of the latest captured facts.
+
+
+
+
+## Adaptive detection and blank new Adventures
+
+EIDETIC now defaults to **balanced** detection rather than maximum-strict detection.
+
+This does **not** turn the junk filter off. The Detection Fortress still rejects strong
+non-person evidence such as rooms, objects, systems, headings, UI terms, locations and
+other known false positives. The difference is that clear human evidence is allowed to
+work immediately:
+
+- `Rose says, "Hello."` can establish Rose immediately.
+- `Marek walks into the room.` can establish Marek immediately.
+- a Character Story Card can seed its character before the player types anything.
+- ordinary output-side introductions and human actions are detected too.
+
+`strict` mode remains available in the Config & Guide card for unusually noisy scenarios,
+but it is no longer the default.
+
+A completely blank new Adventure naturally has no event to remember yet. EIDETIC now
+writes a tiny `EIDETIC ACTIVE` initialization block to dynamic front memory on that blank
+state, keeps history bootstrap open, scans Story Cards automatically, and begins normal
+memory storage on the first real action. No setup command or manual character list is required.
+
