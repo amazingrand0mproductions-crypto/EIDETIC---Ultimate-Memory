@@ -555,3 +555,56 @@ writes a tiny `EIDETIC ACTIVE` initialization block to dynamic front memory on t
 state, keeps history bootstrap open, scans Story Cards automatically, and begins normal
 memory storage on the first real action. No setup command or manual character list is required.
 
+
+
+## Schema 13 — Cross-scenario isolation and relevance
+
+Schema 13 fixes a class of failures that can appear when a long Adventure contains old
+characters, Story Cards and historical arcs alongside a new active cast.
+
+### Identity isolation
+
+A bare first name is no longer automatically attached to an old full-name character
+simply because that old character is the only archived match.
+
+If an old archive contains **Aaron Vale** and a new scene introduces **Aaron**, EIDETIC
+keeps the new identity provisional unless the old Aaron is actually grounded in the
+current scene. If the story later establishes **Aaron Pike**, the provisional identity is
+re-keyed to Aaron Pike and its already-recorded memories move with it.
+
+If two full characters genuinely share a first name, the first name becomes ambiguous
+globally but can still resolve to one of them when exactly one is actually present in
+the current scene.
+
+### Witness isolation
+
+Explicit travel, time jumps, room/location transitions, meals, going to bed, boarding,
+arrival and similar scene boundaries now clear stale scene presence before memory
+ownership is assigned. A character left in the previous room cannot keep "remembering"
+later private scenes just because their name was recently active.
+
+### Direct-question relevance
+
+Short questions such as **"What is the beacon?"** are now retrieved from their own text.
+EIDETIC no longer prepends arbitrary prose from the previous response and accidentally
+matches words from that prose.
+
+Direct questions require genuine topical overlap. High-importance but unrelated memories
+do not bypass relevance merely because they contain a death, relationship or other
+dramatic event.
+
+### Bootstrap provenance
+
+Existing-history import is marked as **bootstrap** provenance. It remains searchable, but
+live play receives a small relevance preference and only the newest bootstrap slice can
+backfill the Current Played Continuity card. This prevents a large historical setup from
+masquerading as current play.
+
+### Durable-memory hygiene
+
+Ordinary uses of words such as **learned** no longer automatically make prose a major
+"discovery." `learned that ...` can represent a discovery; `learned to share a room`,
+`learned to swim`, or other ordinary phrasing does not automatically become one.
+
+These changes are engine-wide and do not depend on any specific Scenario, universe or cast.
+

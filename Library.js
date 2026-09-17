@@ -92,7 +92,7 @@ const EIDETIC_CONFIG = {
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 12;
+  const SCHEMA_REVISION = 13;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -100,6 +100,8 @@ const EIDETIC = (() => {
   let ROOT_CACHE_STATE = null;
   let ROOT_CACHE_VALUE = null;
   let TURN_OVERRIDE = null;
+  let INGEST_ORIGIN = "live";
+  let BOOTSTRAP_CAPTURE_LIVE = false;
   let ALIAS_CACHE_SIG = "";
   let ALIAS_CACHE = null;
   let WORLD_PATTERN_SIG = "";
@@ -18044,7 +18046,7 @@ const EIDETIC = (() => {
     [4, /\b(mother|father|mom|mum|dad|sister|brother|aunt|uncle|cousin|grandmother|grandfather|daughter|son|family)\b/i],
     [4, /\b(weakness|allergy|diagnosed|lost (?:his|her|their|a|the)? ?(?:power|ability)|gained (?:a|the)? ?(?:power|ability)|developed (?:a|the)? ?(?:power|ability)|power awakened|ability awakened)\b/i],
     [3, /\b(power|ability|condition|scar|injury|injured|wounded|hospital|relationship)\b/i],
-    [4, /\b(learned|discovered|found out|realized|remembered|forgot|recognizes|recognized)\b/i],
+    [4, /\b(discovered|found out|realized|remembered|forgot|recognizes|recognized|learned that)\b/i],
     [3, /\b(gave|gift|keepsake|ring|letter|photo|photograph|key|weapon|artifact|stole|stolen|lost|found)\b/i],
     [3, /\b(home|lives at|moved|address|work(?:s|ed)? at|job|school|university|birthday|age|years old)\b/i],
     [3, /\b(boundary|never do|do not|don't|won't|refuse(?:d)?|forbid(?:den)?|consent|safe word)\b/i],
@@ -18067,9 +18069,9 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1 },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, identityRepairDone: false },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
-      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, liveCardWrites: 0 },
+      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, liveCardWrites: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
     };
   }
@@ -18115,6 +18117,7 @@ const EIDETIC = (() => {
     if (!Array.isArray(r.runtime.lastWorldEntities)) r.runtime.lastWorldEntities = [];
     if (!(typeof r.runtime.liveCardId === "number" || typeof r.runtime.liveCardId === "string")) r.runtime.liveCardId = "";
     if (!Number.isFinite(r.runtime.liveSyncTurn)) r.runtime.liveSyncTurn = -1;
+    if (typeof r.runtime.identityRepairDone !== "boolean") r.runtime.identityRepairDone = false;
     if (!Array.isArray(r.liveFacts)) r.liveFacts = [];
     if (!r.stats || typeof r.stats !== "object") r.stats = {};
     if (!r.last || typeof r.last !== "object") r.last = {};
@@ -18129,6 +18132,13 @@ const EIDETIC = (() => {
       r.cold = r.cold.map(packCold).filter(Boolean);
     }
     if (needsSchemaMigration) sanitizePersistedDetectionState(r);
+    if (previousSchema > 0 && previousSchema < 13) {
+      repairLegacyIdentityAliases(r);
+      r.scene = {};
+      r.runtime.storyCardSig = "";
+      r.runtime.worldCardSig = "";
+      r.runtime.identityRepairDone = true;
+    }
     if (Object.prototype.hasOwnProperty.call(r, "v")) delete r.v;
     r.schema = SCHEMA_REVISION;
     r.debug = typeof r.debug === "boolean" ? r.debug : !!EIDETIC_CONFIG.DEBUG;
@@ -18171,10 +18181,11 @@ const EIDETIC = (() => {
   function recMode(e) { return safeText(isPackedRecord(e) ? e[9] : e && e.mode) || "event"; }
   function recSource(e) { return safeText(isPackedRecord(e) ? e[10] : e && e.src); }
   function recManual(e) { return !!(!isPackedRecord(e) && e && e.manual); }
+  function recOrigin(e) { return safeText(isPackedRecord(e) ? e[11] : e && e.origin) || "legacy"; }
   function packCold(e) {
     if (!e) return null;
     if (isPackedRecord(e)) return e;
-    return [recId(e), recTurn(e), recKind(e), recText(e), recOwners(e), recNames(e), recSubjects(e), recKeywords(e), recImportance(e), recMode(e), recSource(e)];
+    return [recId(e), recTurn(e), recKind(e), recText(e), recOwners(e), recNames(e), recSubjects(e), recKeywords(e), recImportance(e), recMode(e), recSource(e), recOrigin(e)];
   }
 
   function cleanText(s) {
@@ -18503,6 +18514,134 @@ const EIDETIC = (() => {
     }
   }
 
+
+
+  function replaceCharacterKeyInArray(arr, oldKey, newKey) {
+    if (!Array.isArray(arr)) return arr;
+    for (let i = 0; i < arr.length; i++) if (arr[i] === oldKey) arr[i] = newKey;
+    return Array.from(new Set(arr));
+  }
+
+  function rekeyCharacter(r, oldKey, newKey, newName) {
+    if (!r || !r.chars || !r.chars[oldKey] || !newKey || oldKey === newKey) return false;
+    if (r.chars[newKey]) return false;
+    const ch = r.chars[oldKey];
+    ch.name = newName || ch.name;
+    ch.aliases = Array.isArray(ch.aliases) ? ch.aliases : [];
+    if (newName && !ch.aliases.some(a => normName(a) === normName(newName))) ch.aliases.unshift(newName);
+    r.chars[newKey] = ch;
+    delete r.chars[oldKey];
+
+    if (r.scene && r.scene[oldKey] != null) {
+      r.scene[newKey] = r.scene[oldKey];
+      delete r.scene[oldKey];
+    }
+
+    const rewriteRecord = e => {
+      if (!e) return;
+      if (Array.isArray(e)) {
+        e[4] = replaceCharacterKeyInArray(e[4], oldKey, newKey);
+        e[5] = replaceCharacterKeyInArray(e[5], oldKey, newKey);
+        e[6] = replaceCharacterKeyInArray(e[6], oldKey, newKey);
+      } else {
+        e.owners = replaceCharacterKeyInArray(e.owners, oldKey, newKey);
+        e.names = replaceCharacterKeyInArray(e.names, oldKey, newKey);
+        e.subjects = replaceCharacterKeyInArray(e.subjects, oldKey, newKey);
+      }
+    };
+    (r.hot || []).forEach(rewriteRecord);
+    (r.cold || []).forEach(rewriteRecord);
+    (r.anchors || []).forEach(rewriteRecord);
+    (r.liveFacts || []).forEach(rewriteRecord);
+    (r.ledger || []).forEach(e => {
+      if (!e) return;
+      e.owners = replaceCharacterKeyInArray(e.owners, oldKey, newKey);
+      if (e.subject === oldKey) e.subject = newKey;
+    });
+
+    if (r.world) {
+      (r.world.facts || []).forEach(e => {
+        if (!e) return;
+        e.owners = replaceCharacterKeyInArray(e.owners, oldKey, newKey);
+      });
+      (r.world.timeline || []).forEach(e => {
+        if (!e) return;
+        e.owners = replaceCharacterKeyInArray(e.owners, oldKey, newKey);
+      });
+
+      const oldWorldKey = worldKey(oldKey, "character");
+      const newWorldKey = worldKey(newName || newKey, "character");
+      if (r.world.entities && r.world.entities[oldWorldKey] && !r.world.entities[newWorldKey]) {
+        const we = r.world.entities[oldWorldKey];
+        we.key = newWorldKey;
+        we.name = newName || we.name;
+        r.world.entities[newWorldKey] = we;
+        delete r.world.entities[oldWorldKey];
+        (r.world.facts || []).forEach(e => { if (e && e.entity === oldWorldKey) e.entity = newWorldKey; });
+        (r.world.timeline || []).forEach(e => {
+          if (e && Array.isArray(e.entities)) e.entities = e.entities.map(k => k === oldWorldKey ? newWorldKey : k);
+        });
+      }
+    }
+
+    delete r.candidates[oldKey];
+    ALIAS_CACHE_SIG = "";
+    ALIAS_CACHE = null;
+    WORLD_PATTERN_SIG = "";
+    WORLD_PATTERN_CACHE = null;
+    if (r.stats) r.stats.identityRepairs = Number(r.stats.identityRepairs || 0) + 1;
+    return true;
+  }
+
+  function uniqueActiveSameFirst(r, first) {
+    if (!r || !r.chars) return null;
+    const turn = currentTurn();
+    const keys = Object.keys(r.chars).filter(k => {
+      const parts = normName(r.chars[k].name || k).split(" ").filter(Boolean);
+      return parts.length > 1 && parts[0] === first &&
+        r.scene && r.scene[k] != null && turn - Number(r.scene[k]) <= EIDETIC_CONFIG.PRESENCE_HOLD_TURNS;
+    });
+    return keys.length === 1 ? keys[0] : null;
+  }
+
+  function repairLegacyIdentityAliases(r) {
+    if (!r || !r.chars) return;
+    const keys = Object.keys(r.chars);
+    const fullFirstCounts = Object.create(null);
+    for (let i = 0; i < keys.length; i++) {
+      const ch = r.chars[keys[i]] || {};
+      const parts = normName(ch.name || keys[i]).split(" ").filter(Boolean);
+      if (parts.length > 1) fullFirstCounts[parts[0]] = Number(fullFirstCounts[parts[0]] || 0) + 1;
+    }
+    let changed = 0;
+    for (let i = 0; i < keys.length; i++) {
+      const ch = r.chars[keys[i]] || {};
+      const parts = normName(ch.name || keys[i]).split(" ").filter(Boolean);
+      if (parts.length <= 1) continue;
+      const first = parts[0];
+      const before = Array.isArray(ch.aliases) ? ch.aliases.slice() : [ch.name];
+      ch.aliases = before.filter(a => {
+        const n = normName(a);
+        // Old builds inferred a bare first name from a full identity. Remove that
+        // unsafe inference; an explicit Story Card alias will be re-seeded in init().
+        return !(n === first && n !== normName(ch.name));
+      });
+      if (!ch.aliases.some(a => normName(a) === normName(ch.name))) ch.aliases.unshift(ch.name);
+      if (ch.aliases.length !== before.length) changed++;
+    }
+    r.ambiguousFirstNames = Object.keys(fullFirstCounts).filter(k => fullFirstCounts[k] > 1);
+    if (r.stats) r.stats.identityRepairs = Number(r.stats.identityRepairs || 0) + changed;
+    ALIAS_CACHE_SIG = "";
+    ALIAS_CACHE = null;
+  }
+
+  function characterRecentlyGrounded(r, key) {
+    if (!r || !r.chars || !r.chars[key]) return false;
+    const turn = currentTurn(), ch = r.chars[key];
+    if (r.scene && r.scene[key] != null && turn - Number(r.scene[key]) <= 1) return true;
+    return Number.isFinite(ch.lastSeen) && ch.lastSeen >= 0 && turn - ch.lastSeen <= 1;
+  }
+
   function ensureChar(name, source, force, evidence) {
     const r = root();
     if (!r) return null;
@@ -18528,6 +18667,11 @@ const EIDETIC = (() => {
     const incomingParts = key.split(" ");
     const first = incomingParts[0];
     const existingKeys = Object.keys(r.chars);
+    if (incomingParts.length === 1 && r.ambiguousFirstNames.indexOf(first) >= 0) {
+      const active = uniqueActiveSameFirst(r, first);
+      if (active) return active;
+      return null;
+    }
     if (r.ambiguousFirstNames.indexOf(first) < 0) {
       for (let i = 0; i < existingKeys.length; i++) {
         const ek = existingKeys[i];
@@ -18538,14 +18682,30 @@ const EIDETIC = (() => {
         const existingFullAliases = (ch.aliases || []).map(normName).filter(a => a.split(" ").length > 1);
         if (incomingParts.length > 1 && existingParts.length === 1) {
           if (existingFullAliases.length && existingFullAliases.some(a => a !== key)) continue;
-          if (ch.aliases.indexOf(name) < 0 && ch.aliases.length < EIDETIC_CONFIG.MAX_ALIASES_PER_CHARACTER) ch.aliases.push(name);
-          ch.name = name;
-          ch.lastSource = source || ch.lastSource;
-          return ek;
+          if (rekeyCharacter(r, ek, key, name)) {
+            const upgraded = r.chars[key];
+            upgraded.lastSource = source || upgraded.lastSource;
+            const fullSameFirst = Object.keys(r.chars).filter(k2 => {
+              const parts = normName(r.chars[k2].name || k2).split(" ").filter(Boolean);
+              return parts.length > 1 && parts[0] === first;
+            });
+            if (fullSameFirst.length > 1 && r.ambiguousFirstNames.indexOf(first) < 0) r.ambiguousFirstNames.push(first);
+            if (fullSameFirst.length > 1) {
+              for (let j = 0; j < fullSameFirst.length; j++) {
+                const ch2 = r.chars[fullSameFirst[j]];
+                ch2.aliases = (ch2.aliases || []).filter(a => normName(a) !== first);
+              }
+            }
+            return key;
+          }
         }
         if (incomingParts.length === 1 && existingParts.length > 1) {
           const fullCandidates = existingKeys.filter(k2 => normName(r.chars[k2].name || k2).split(" ")[0] === first && normName(r.chars[k2].name || k2).split(" ").length > 1);
-          if (fullCandidates.length === 1) {
+          // Never let a stale archive identity steal a bare first name merely because it
+          // happens to be the only old full-name match. Bind only when that identity is
+          // already grounded in the current live scene. Otherwise allow a provisional
+          // first-name character to accumulate evidence until a full identity appears.
+          if (fullCandidates.length === 1 && characterRecentlyGrounded(r, ek)) {
             if (ch.aliases.indexOf(name) < 0 && ch.aliases.length < EIDETIC_CONFIG.MAX_ALIASES_PER_CHARACTER) ch.aliases.push(name);
             ch.lastSource = source || ch.lastSource;
             return ek;
@@ -19030,7 +19190,9 @@ const EIDETIC = (() => {
     const names=namesMentioned(shown), world=worldEntitiesMentioned(shown);
     const fp=hash(finalStatus+"|"+shown.toLowerCase());
     if((r.liveFacts||[]).some(x=>x&&x.fp===fp))return;
-    r.liveFacts.push({id:"lf"+(++r.seq),turn,kind,mode,status:finalStatus,text:shown,owners:Array.from(owners||[PLAYER]),names,world,src,fp});
+    if (INGEST_ORIGIN === "bootstrap" && !BOOTSTRAP_CAPTURE_LIVE) return;
+    r.liveFacts.push({id:"lf"+(++r.seq),turn,kind,mode,status:finalStatus,text:shown,owners:Array.from(owners||[PLAYER]),names,world,src,fp,origin:INGEST_ORIGIN});
+    if (INGEST_ORIGIN === "bootstrap") r.stats.bootstrapLiveFacts = Number(r.stats.bootstrapLiveFacts || 0) + 1;
     if(r.liveFacts.length>EIDETIC_CONFIG.LIVE_FACT_LIMIT)r.liveFacts.splice(0,r.liveFacts.length-EIDETIC_CONFIG.LIVE_FACT_LIMIT);
     r.stats.liveFacts=Number(r.stats.liveFacts||0)+1;
   }
@@ -19160,6 +19322,7 @@ const EIDETIC = (() => {
         const raw = safeText(aliases[j]).trim();
         const n = normName(raw);
         if (!raw || !n) continue;
+        if (n.indexOf(" ") < 0 && (r.ambiguousFirstNames || []).indexOf(n) >= 0) continue;
         if (map[n] == null) map[n] = key;
         patterns.push({
           key,
@@ -19184,6 +19347,13 @@ const EIDETIC = (() => {
       const p = idx.patterns[i];
       if (seen.has(p.key)) continue;
       if (p.re.test(raw)) { seen.add(p.key); out.push(p.key); }
+    }
+    const ambiguous = r.ambiguousFirstNames || [];
+    for (let i = 0; i < ambiguous.length; i++) {
+      const first = ambiguous[i];
+      if (!new RegExp("(^|[^A-Za-z0-9À-ÖØ-öø-ÿĀ-ſ])" + escapeRe(first) + "([^A-Za-z0-9À-ÖØ-öø-ÿĀ-ſ]|$)", "i").test(raw)) continue;
+      const active = uniqueActiveSameFirst(r, first);
+      if (active && !seen.has(active)) { seen.add(active); out.push(active); }
     }
     return out;
   }
@@ -19214,8 +19384,20 @@ const EIDETIC = (() => {
 
   function sceneResetEvidence(text) {
     const t = cleanText(text);
-    return /^(?:later\b|hours? later\b|days? later\b|the next (?:day|morning|evening|week)\b|the following (?:day|morning|week)\b|meanwhile\b|elsewhere\b)/i.test(t) ||
-      /\bI\s+(?:leave|left)(?:\s+the)?\s+[A-Za-z][^.!?]{0,80}?(?:\.|,|\band\b|$)/i.test(t) ||
+    if (!t) return false;
+    if (/^(?:later\b|hours? later\b|days? later\b|weeks? later\b|months? later\b|years? later\b|the next (?:day|morning|afternoon|evening|night|week)\b|the following (?:day|morning|afternoon|evening|night|week)\b|meanwhile\b|elsewhere\b)/i.test(t)) return true;
+
+    // First/second/third person travel into a different place is a scene boundary.
+    if (/^(?:I|you|we|they|he|she)\s+(?:leave|left|head|headed|go|goes|went|drive|drives|drove|walk|walks|walked|fly|flies|flew|teleport|teleports|teleported|return|returns|returned|travel|travels|travelled|board|boards|boarded|enter|enters|entered|arrive|arrives|arrived|move|moves|moved)\b[^.!?]{0,100}\b(?:away|home|to|toward|towards|into|inside|aboard|back|there)\b/i.test(t)) return true;
+
+    // Common scene-changing player actions that otherwise leave stale witnesses behind.
+    if (/^(?:I|you|we)\s+(?:go|get|grab|have)\s+(?:to\s+bed|food|breakfast|lunch|dinner|coffee|tea|drinks?)\b(?:[^.!?]{0,60}\bwith\b)?/i.test(t)) return true;
+
+    // A new paragraph opening on a concrete place followed by occupants/actions is a
+    // useful generic boundary signal without hard-coding any scenario names.
+    if (/^(?:the|a|an)\s+[A-Za-z][A-Za-z'’\- ]{0,45}\b(?:room|office|laboratory|lab|cafeteria|canteen|kitchen|bedroom|quarters|cabin|bridge|deck|corridor|hall|warehouse|workshop|street|park|hospital|clinic|school|university|station|ship|shuttle|vehicle|apartment|flat|house|home)\b[^.!?]{0,60}\b(?:is|are|was|were|looks?|sits?|stands?|opens?|holds?|contains?|smells?|feels?)\b/i.test(t)) return true;
+
+    return /\bI\s+(?:leave|left)(?:\s+the)?\s+[A-Za-z][^.!?]{0,80}?(?:\.|,|\band\b|$)/i.test(t) ||
       /\bI\s+(?:head|headed|go|went|drive|drove|walk|walked|teleport|teleported|return|returned)\s+(?:away|home|to|toward|towards|back)\b/i.test(t);
   }
 
@@ -19425,7 +19607,7 @@ const EIDETIC = (() => {
           if (shared && old.fp === fp) { same = true; break; }
         }
         if (same) continue;
-        r.ledger.push({ id:"s"+(++r.seq), turn, kind, text:shown, owners:ownerArray.slice(), subject, slot, k:tokenList(shown,20).concat(semanticTags(shown)).filter((x,i,a)=>a.indexOf(x)===i).join("|"), src:sourceHash, fp, manual:!!manual });
+        r.ledger.push({ id:"s"+(++r.seq), turn, kind, text:shown, owners:ownerArray.slice(), subject, slot, k:tokenList(shown,20).concat(semanticTags(shown)).filter((x,i,a)=>a.indexOf(x)===i).join("|"), src:sourceHash, fp, manual:!!manual, origin: manual ? "manual" : INGEST_ORIGIN });
         r.stats.stateFacts = Number(r.stats.stateFacts || 0) + 1;
       }
     }
@@ -19932,13 +20114,13 @@ const EIDETIC = (() => {
   function addTimelineRecord(text,entities,owners,turn,kind,src,mode,category,storyHours,extra) {
     const w=worldRoot(); if(!w)return null; const fp=hash(category+"|"+cleanText(text).toLowerCase()+"|"+Number(storyHours||0).toFixed(3));
     for(let i=w.timeline.length-1,scan=0;i>=0&&scan<120;i--,scan++){const e=w.timeline[i];if(e&&e.fp===fp&&e.src===src)return e;}
-    const e=Object.assign({id:"wte"+(++root().seq),turn,kind,text:displayText(text,EIDETIC_CONFIG.WORLD_FACT_CHARS),entities:(entities||[]).slice(),owners:Array.from(owners||[PLAYER]),mode,category:category||"event",storyHours:Number(storyHours)||0,src,fp,k:tokenList(text,24).concat(semanticTags(text)).filter((x,i,a)=>a.indexOf(x)===i).join("|")},extra||{});
+    const e=Object.assign({id:"wte"+(++root().seq),turn,kind,text:displayText(text,EIDETIC_CONFIG.WORLD_FACT_CHARS),entities:(entities||[]).slice(),owners:Array.from(owners||[PLAYER]),mode,category:category||"event",storyHours:Number(storyHours)||0,src,origin:INGEST_ORIGIN,fp,k:tokenList(text,24).concat(semanticTags(text)).filter((x,i,a)=>a.indexOf(x)===i).join("|")},extra||{});
     w.timeline.push(e); root().stats.worldEvents=Number(root().stats.worldEvents||0)+1; pruneWorldMemory(); return e;
   }
   function addWorldFactRecord(entityKey,slot,text,owners,turn,kind,src,mode,manual) {
     const w=worldRoot(); if(!w||!entityKey)return; const shown=displayText(text,EIDETIC_CONFIG.WORLD_FACT_CHARS), fp=hash(entityKey+"|"+slot+"|"+shown.toLowerCase());
     for(let i=w.facts.length-1,scan=0;i>=0&&scan<160;i--,scan++){const e=w.facts[i];if(e&&e.entity===entityKey&&e.slot===slot&&e.fp===fp&&e.src===src)return;}
-    w.facts.push({id:"wf"+(++root().seq),turn,kind,entity:entityKey,slot,text:shown,owners:Array.from(owners||[PLAYER]),mode,storyHours:currentStoryHours(),dateLabel:currentStoryDateLabel(),src,fp,k:tokenList(shown,24).concat(semanticTags(shown)).filter((x,i,a)=>a.indexOf(x)===i).join("|"),manual:!!manual});
+    w.facts.push({id:"wf"+(++root().seq),turn,kind,entity:entityKey,slot,text:shown,owners:Array.from(owners||[PLAYER]),mode,storyHours:currentStoryHours(),dateLabel:currentStoryDateLabel(),src,origin:manual?"manual":INGEST_ORIGIN,fp,k:tokenList(shown,24).concat(semanticTags(shown)).filter((x,i,a)=>a.indexOf(x)===i).join("|"),manual:!!manual});
     root().stats.worldFacts=Number(root().stats.worldFacts||0)+1; pruneWorldMemory();
   }
   function pruneWorldMemory() {
@@ -20063,7 +20245,7 @@ const EIDETIC = (() => {
     if(/\b(?:gave|gifted|handed|passed)\s+(?:(?:him|her|them|[A-ZÀ-ÖØ-ÞĀ-Ž][\w'’.-]*(?:\s+[A-ZÀ-ÖØ-ÞĀ-Ž][\w'’.-]*){0,3})\s+)?(?:the\s+|a\s+|an\s+)?[\w'’.-]+(?:\s+[\w'’.-]+){0,3}(?:\s+to\b|[.!?]?$)/i.test(t) ||
        /\b(?:pockets?|pocketed)\s+(?:the\s+|a\s+|an\s+)?[\w'’.-]+/i.test(t) ||
        /\b(?:was|is|has been)\s+(?:lost|stolen|found)\b/i.test(t))return"item-change";
-    if(/\b(?:discovered|learned|found out|confirmed|revealed|confessed)\s+(?:that\b|the\b|a\b|an\b|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t))return"discovery";
+    if(/\b(?:discovered|found out|confirmed|revealed|confessed)\s+(?:that\b|the\b|a\b|an\b|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t) || /\blearned\s+that\b/i.test(t))return"discovery";
     if(/\b(?:was|is|has been)\s+(?:founded|formed|created|established|closed|dissolved|disbanded)\b/i.test(t) ||
        /\b(?:founded|formed|established|dissolved|disbanded)\s+(?:the|a|an|[A-ZÀ-ÖØ-ÞĀ-Ž])/i.test(t))return"world-change";
     return"";
@@ -20115,7 +20297,31 @@ const EIDETIC = (() => {
   }
   function retrieveWorldContinuity(query,plan,limitFacts,limitEvents,activeOwners) {
     const w=worldRoot(); if(!w||!EIDETIC_CONFIG.ENABLE_WORLD_MEMORY)return{facts:[],events:[]}; plan=plan||makeQueryPlan(query); const qkeys=new Set(worldEntitiesMentioned(query)), tokens=plan.lexicalTokens||[], tags=plan.tags||[];
-    const score=(e,isEvent)=>{ if(!worldRecordOwnerAllows(e,activeOwners))return-999; let s=0; const ents=e.entities||(e.entity?[e.entity]:[]); for(let i=0;i<ents.length;i++)if(qkeys.has(ents[i]))s+=8; const kw="|"+safeText(e.k)+"|"; let lm=0; for(let i=0;i<tokens.length;i++){const vs=plan.variants&&plan.variants[tokens[i]]?plan.variants[tokens[i]]:lexicalVariants(tokens[i]);if(keywordMatchesVariants(kw,vs))lm++;} s+=lm*2.7; for(let i=0;i<tags.length;i++)if(kw.indexOf("|"+tags[i]+"|")>=0)s+=1.2; if(/\b(?:die|died|death|dead|killed)\b/i.test(query)&&/death$/.test(safeText(e.category)))s+=e.category==="death"?10:5; if(/\b(?:how long|ago|when)\b/i.test(query)&&Number.isFinite(e.storyHours))s+=4; if(isEvent&&e.category!=="event")s+=1.5; if(!plan.explicitRecall&&!qkeys.size&&!lm&&s<2)return-999; return s; };
+    const score=(e,isEvent)=>{
+      if(!worldRecordOwnerAllows(e,activeOwners))return-999;
+      let s=0, exactEntity=false;
+      const ents=e.entities||(e.entity?[e.entity]:[]);
+      for(let i=0;i<ents.length;i++)if(qkeys.has(ents[i])){s+=8;exactEntity=true;}
+      const kw="|"+safeText(e.k)+"|";
+      let lm=0;
+      for(let i=0;i<tokens.length;i++){
+        const vs=plan.variants&&plan.variants[tokens[i]]?plan.variants[tokens[i]]:lexicalVariants(tokens[i]);
+        if(keywordMatchesVariants(kw,vs))lm++;
+      }
+      if(plan.directQuestion && tokens.length && !lm && !exactEntity)return-999;
+      s+=lm*2.7;
+      for(let i=0;i<tags.length;i++)if(kw.indexOf("|"+tags[i]+"|")>=0)s+=1.2;
+      if(/\b(?:die|died|death|dead|killed)\b/i.test(query)&&/death$/.test(safeText(e.category)))s+=e.category==="death"?10:5;
+      if(/\b(?:how long|ago|when)\b/i.test(query)&&Number.isFinite(e.storyHours))s+=4;
+      if(isEvent&&e.category!=="event")s+=1.5;
+      const ageTurns=Math.max(0,currentTurn()-Number(e.turn||0));
+      if(ageTurns<=12)s+=1.5; else if(ageTurns>120)s-=1; else if(ageTurns>500)s-=2;
+      if(safeText(e.origin)==="bootstrap"&&!plan.explicitRecall)s-=1.25;
+      else if(safeText(e.origin)==="live")s+=0.25;
+      if(!plan.explicitRecall&&!qkeys.size&&!lm&&s<2)return-999;
+      if(!plan.explicitRecall&&tokens.length<=1&&!exactEntity&&s<6)return-999;
+      return s;
+    };
     const facts=[],seen=new Set(); for(let i=w.facts.length-1;i>=0;i--){const e=w.facts[i];if(!e)continue;const k=e.entity+"|"+e.slot;if(seen.has(k))continue;seen.add(k);const sc=score(e,false);if(sc>=2)facts.push({e,sc});}
     const events=[]; for(let i=w.timeline.length-1;i>=0;i--){const e=w.timeline[i];if(!e||e.category==="time-gap"||e.category==="current-date")continue;const sc=score(e,true);if(sc>=2)events.push({e,sc});}
     facts.sort((a,b)=>b.sc-a.sc||b.e.turn-a.e.turn);events.sort((a,b)=>b.sc-a.sc||b.e.turn-a.e.turn);
@@ -20202,6 +20408,7 @@ const EIDETIC = (() => {
       fp: fp,
       src: source || "auto",
       manual: !!manual,
+      origin: manual ? "manual" : INGEST_ORIGIN,
     });
     if (r.anchors.length > EIDETIC_CONFIG.MAX_ANCHORS) {
       r.anchors.sort((a, b) => (((b.manual ? 100 : 0) + evidenceRank(b.mode, b.manual) * 8 + b.imp * 5 + b.turn / 1000) - ((a.manual ? 100 : 0) + evidenceRank(a.mode, a.manual) * 8 + a.imp * 5 + a.turn / 1000)));
@@ -20254,7 +20461,7 @@ const EIDETIC = (() => {
         const t = displayText(e.text, EIDETIC_CONFIG.COLD_EVENT_CHARS);
         r.cold.push(packCold({
           id: e.id, turn: e.turn, kind: e.kind, text: t, owners: e.owners, names: e.names,
-          subjects: e.subjects || [], k: e.k, imp: e.imp, mode: e.mode || "event", src: e.src,
+          subjects: e.subjects || [], k: e.k, imp: e.imp, mode: e.mode || "event", src: e.src, origin: e.origin || "legacy",
         }));
         r.stats.coldMoved = (r.stats.coldMoved || 0) + 1;
       }
@@ -20394,7 +20601,7 @@ const EIDETIC = (() => {
     for (let i = 0; i < chunks.length; i++) {
       const c = chunks[i];
 
-      if (sceneResetEvidence(c)) { r.scene = {}; if (r.runtime) r.runtime.lastWorldEntities = []; }
+      if (sceneResetEvidence(c)) { r.scene = {}; if (r.runtime) r.runtime.lastWorldEntities = []; r.stats.sceneResets = Number(r.stats.sceneResets || 0) + 1; }
 
       const owners = ownerSetFor(c, kind);
       const ownerArray = Array.from(owners);
@@ -20428,7 +20635,7 @@ const EIDETIC = (() => {
             id: "e" + (++r.seq), turn: turn, kind: kind,
             text: displayText(c, EIDETIC_CONFIG.EVENT_CHUNK_CHARS),
             owners: ownerArray, names: names, subjects: subjects,
-            k: tokens.join("|"), imp: imp, mode: mode, src: srcHash,
+            k: tokens.join("|"), imp: imp, mode: mode, src: srcHash, origin: INGEST_ORIGIN,
           };
           if (imp <= 1) e.rfp = repeatFingerprint(c, kind, ownerArray, mode);
           r.hot.push(e);
@@ -20446,7 +20653,7 @@ const EIDETIC = (() => {
     r.last.turn = turn;
     if (kind === "input") { r.last.inputHash = srcHash; r.last.inputTurn = turn; }
     if (kind === "output") { r.last.outputHash = srcHash; r.last.outputTurn = turn; }
-    syncLiveStoryCards(true);
+    if (INGEST_ORIGIN !== "bootstrap") syncLiveStoryCards(true);
   }
 
   function eventOwnerAllows(e, charKey) {
@@ -20489,6 +20696,7 @@ const EIDETIC = (() => {
       currentStateLookup: currentStateLookup,
       epistemicIntent: queryEpistemicIntent(query),
       temporal: temporal,
+      directQuestion: /\?\s*$/.test(query) || /^(?:who|what|when|where|why|how|which|whose|is|are|was|were|do|does|did|can|could|would|will|should|has|have|had)\b/i.test(query),
     };
   }
 
@@ -20557,6 +20765,7 @@ const EIDETIC = (() => {
         if (!charKey || plan.names[i] !== charKey) topicalEntityMatches++;
       }
     }
+    if (plan.directQuestion && lexical.length && lexicalMatches + topicalEntityMatches + strongTagMatches === 0) return -999;
     if (!plan.explicitRecall && plan.temporal === "neutral" && lexicalMatches + topicalEntityMatches + strongTagMatches === 0 && recImportance(e) < 4) return -999;
     if (plan.explicitRecall || plan.temporal !== "neutral") {
       if (plan.currentStateLookup && tags.some(t => t !== "@time") && strongTagMatches === 0) return -999;
@@ -20580,6 +20789,9 @@ const EIDETIC = (() => {
     else score += 2 / Math.sqrt(1 + age / 20);
     if (recMode(e) === "question") score -= 3;
     if (recMode(e) === "belief" || recMode(e) === "uncertain") score -= 0.6;
+    const origin = recOrigin(e);
+    if (origin === "bootstrap" && !plan.explicitRecall) score -= 1.4;
+    else if (origin === "live") score += 0.35;
     if (isCold) score -= 0.35;
     return score;
   }
@@ -20604,7 +20816,7 @@ const EIDETIC = (() => {
     const candidate = {
       score: score, id: recId(e), turn: recTurn(e), text: recText(e), owners: recOwners(e),
       names: recNames(e), subjects: recSubjects(e), k: recKeywords(e), imp: recImportance(e),
-      mode: recMode(e), manual: recManual(e), src: recSource(e)
+      mode: recMode(e), manual: recManual(e), src: recSource(e), origin: recOrigin(e)
     };
     if (arr.length >= cap * 2) {
       let minIndex = 0;
@@ -20797,14 +21009,23 @@ const EIDETIC = (() => {
     const baseTurn = Math.max(0, endTurn - picked.length);
     let imported = 0;
     const previousOverride = TURN_OVERRIDE;
+    const previousOrigin = INGEST_ORIGIN;
+    const previousCapture = BOOTSTRAP_CAPTURE_LIVE;
     try {
+      INGEST_ORIGIN = "bootstrap";
       for (let i = 0; i < picked.length; i++) {
         TURN_OVERRIDE = baseTurn + i;
+        // Backfill current continuity only from the newest slice of an existing Adventure.
+        // Older imported history remains searchable episodic/world memory but cannot flood
+        // the live-current Story Card.
+        BOOTSTRAP_CAPTURE_LIVE = i >= Math.max(0, picked.length - 12);
         ingest(picked[i].text, historyActionKind(picked[i].item));
         imported++;
       }
     } finally {
       TURN_OVERRIDE = previousOverride;
+      INGEST_ORIGIN = previousOrigin;
+      BOOTSTRAP_CAPTURE_LIVE = previousCapture;
     }
     // A brand-new Adventure can invoke EIDETIC before history contains a playable action.
     // Keep bootstrap open in that empty state; the first real input switches to live tracking.
@@ -20813,6 +21034,7 @@ const EIDETIC = (() => {
     r.runtime.recallCacheKey = "";
     r.runtime.recallCacheBlock = "";
     r.runtime.recallPayloadSig = "";
+    if (imported > 0) syncLiveStoryCards(true);
     return imported;
   }
 
@@ -20834,7 +21056,8 @@ const EIDETIC = (() => {
   function buildQuery(extraText) {
     const focus = cleanText(extraText || "");
     if (focus) {
-      if (explicitRecallLanguage(focus) || focus.length >= 64 || namesMentioned(focus).length) return focus.slice(-1400);
+      const directQuestion = /\?\s*$/.test(focus) || /^(?:who|what|when|where|why|how|which|whose|is|are|was|were|do|does|did|can|could|would|will|should|has|have|had)\b/i.test(focus);
+      if (directQuestion || explicitRecallLanguage(focus) || focus.length >= 64 || namesMentioned(focus).length) return focus.slice(-1400);
       const parts = [];
       if (typeof history !== "undefined" && Array.isArray(history) && history.length) {
         const h = cleanText(safeText(history[history.length - 1] && history[history.length - 1].text));
@@ -20957,7 +21180,7 @@ const EIDETIC = (() => {
     const lines = [];
     lines.push(OPEN + " rev=" + rev + " turn=" + turn + " seq=" + (r.seq || 0) + " sig=" + payloadSig + "]]");
     lines.push("AUTHORITATIVE MEMORY REVISION " + rev + ". Ignore every older EIDETIC_RECALL block with a lower revision; optimized-context caching may leave old blocks visible.");
-    lines.push("These are past records, not new events. Do not quote, expose, or mention this control block.");
+    lines.push("These are past records, not new events. Do not quote, expose, or mention this control block. Memory never authorizes dialogue, thoughts, decisions or voluntary actions for a player-controlled character.");
     lines.push("PRIVATE CONTINUITY belongs only to that character. A character merely mentioned as a subject did not automatically witness the event.");
     lines.push("Evidence labels matter: SAID/CLAIMED, BELIEVED/SUSPECTED and UNCERTAIN are not established objective facts. Preserve uncertainty.");
     lines.push("If records conflict, prefer ESTABLISHED/manual anchors and newer explicit events. Do not invent missing memories.");
@@ -20968,7 +21191,7 @@ const EIDETIC = (() => {
       const compactHeader = [
         lines[0],
         "Revision " + rev + " is authoritative; ignore lower EIDETIC revisions.",
-        "Past memory only. PRIVATE sections are character-only; CLAIM/BELIEF/UNCERTAIN are not facts. Do not invent missing memories."
+        "Past memory only. PRIVATE sections are character-only; CLAIM/BELIEF/UNCERTAIN are not facts. Memory never grants control of the player character. Do not invent missing memories."
       ];
       const headerLines = budget < 1800 ? compactHeader : lines.slice(0, 6);
       const tail = "\n" + CLOSE;
@@ -21067,7 +21290,10 @@ const EIDETIC = (() => {
     if (!r) return null;
     const k = normName(name);
     if (!k) return null;
-    if (k.split(" ").length === 1 && (r.ambiguousFirstNames || []).indexOf(k) >= 0) return null;
+    if (k.split(" ").length === 1 && (r.ambiguousFirstNames || []).indexOf(k) >= 0) {
+      const active = uniqueActiveSameFirst(r, k);
+      return active || null;
+    }
     if (r.chars[k]) return k;
     const idx = aliasIndex();
     return idx.map[k] || null;
@@ -21336,6 +21562,9 @@ const EIDETIC = (() => {
     syncLiveStoryCards: syncLiveStoryCards,
     stripEideticNotes: stripEideticNotes,
     idleActivationRecallBlock: idleActivationRecallBlock,
+    sceneResetEvidence: sceneResetEvidence,
+    ownerSetFor: ownerSetFor,
+    recOrigin: recOrigin,
   };
 
   return run;
