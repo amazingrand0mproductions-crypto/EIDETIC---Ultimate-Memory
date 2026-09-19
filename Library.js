@@ -3,7 +3,7 @@ const EIDETIC_CONFIG = {
   ENABLED: true,
   AUTO_CONFIG_CARD: true,
   CONFIG_CARD_KEY: "%__EIDETIC_CFG_A9F3C1__%",
-  OUTPUT_SPACING: "auto",
+  OUTPUT_SPACING: "preserve",
   BOOTSTRAP_EXISTING_HISTORY: true,
   BOOTSTRAP_HISTORY_ACTIONS: 240,
   BOOTSTRAP_HISTORY_CHARS: 120000,
@@ -20,7 +20,7 @@ const EIDETIC_CONFIG = {
   NAME_CANDIDATE_TTL: 80,
   MAX_NAME_CANDIDATES: 240,
   MAX_TRACKED_CHARACTERS: 80,
-  MAX_ACTIVE_CHARACTERS: 4,
+  MAX_ACTIVE_CHARACTERS: 3,
   MAX_ALIASES_PER_CHARACTER: 24,
   PRESENCE_HOLD_TURNS: 3,
 
@@ -30,10 +30,10 @@ const EIDETIC_CONFIG = {
   COLD_EVENT_CHARS: 190,
   MAX_ANCHORS: 1200,
 
-  MEMORIES_PER_CHARACTER: 5,
-  ANCHORS_PER_CHARACTER: 3,
-  NARRATIVE_MEMORIES: 3,
-  GLOBAL_MEMORIES: 2,
+  MEMORIES_PER_CHARACTER: 3,
+  ANCHORS_PER_CHARACTER: 2,
+  NARRATIVE_MEMORIES: 2,
+  GLOBAL_MEMORIES: 1,
   CANDIDATE_HEADROOM: 4,
   MIN_RECALL_SCORE: 2.0,
   RECENT_TURN_SUPPRESSION: 3,
@@ -43,16 +43,16 @@ const EIDETIC_CONFIG = {
   REPEAT_SUPPRESSION_WINDOW: 60,
   REPEAT_SCAN_LIMIT: 96,
 
-  RECALL_BLOCK_MAX_CHARS: 3200,
-  RECALL_CONTEXT_FRACTION: 0.12,
-  RECALL_MIN_CHARS: 850,
+  RECALL_BLOCK_MAX_CHARS: 1700,
+  RECALL_CONTEXT_FRACTION: 0.055,
+  RECALL_MIN_CHARS: 450,
 
   STRICT_KNOWLEDGE: true,
   ENABLE_NARRATIVE_RECALL: true,
   ABSTAIN_ON_EXPLICIT_RECALL_MISS: true,
 
   USE_FRONT_MEMORY: true,
-  APPEND_CONTEXT_FALLBACK: true,
+  APPEND_CONTEXT_FALLBACK: false,
   REFRESH_RECALL_AFTER_OUTPUT: false,
 
   INCLUDE_RELEVANT_CARD_SEEDS: false,
@@ -61,7 +61,7 @@ const EIDETIC_CONFIG = {
 
   ENABLE_STATE_LEDGER: true,
   STATE_LEDGER_LIMIT: 1800,
-  STATE_FACTS_PER_CHARACTER: 3,
+  STATE_FACTS_PER_CHARACTER: 2,
   STATE_FACT_CHARS: 280,
 
   ENABLE_WORLD_MEMORY: true,
@@ -73,8 +73,8 @@ const EIDETIC_CONFIG = {
   MAX_WORLD_CANDIDATES: 360,
   WORLD_FACT_LIMIT: 3200,
   WORLD_TIMELINE_LIMIT: 3200,
-  WORLD_FACTS_PER_RECALL: 5,
-  WORLD_EVENTS_PER_RECALL: 4,
+  WORLD_FACTS_PER_RECALL: 3,
+  WORLD_EVENTS_PER_RECALL: 3,
   WORLD_FACT_CHARS: 300,
   TRACK_STORY_TIME: true,
 
@@ -87,20 +87,29 @@ const EIDETIC_CONFIG = {
   AUTO_CURRENT_CONTINUITY_CARD: true,
   CURRENT_CONTINUITY_KEY: "%__EIDETIC_CURRENT_7D4B__%",
   LIVE_FACT_LIMIT: 180,
-  LIVE_FACT_CHARS: 260,
-  CARD_NOTE_FACTS: 6,
-  CURRENT_CARD_FACTS: 14,
-  LIVE_RECALL_FACTS: 5,
+  LIVE_FACT_CHARS: 220,
+  CARD_NOTE_FACTS: 2,
+  CURRENT_CARD_FACTS: 8,
+  LIVE_RECALL_FACTS: 3,
+
+  // Phoenix/mobile-safe integration.
+  COMMAND_MODE: "soft", // soft = no Input stop/error; command result is returned as a utility line
+  LEGACY_STATE_MESSAGE: false, // Phoenix docs say state.message is not implemented
+  STORY_CARD_RETRY_TURNS: 8,
+  MAX_CHARACTER_CARD_ENTRY_CHARS: 1300,
+  CONTEXT_HEADROOM_FRACTION: 0.18,
 };
 
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 14;
+  const SCHEMA_REVISION = 15;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
   const PLAYER = "@player";
+  const COMMAND_INPUT_MARKER = "[[EIDETIC_COMMAND_PENDING]]";
+  const COMMAND_OUTPUT_PREFIX = "EIDETIC • ";
   let ROOT_CACHE_STATE = null;
   let ROOT_CACHE_VALUE = null;
   let TURN_OVERRIDE = null;
@@ -18073,9 +18082,9 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
-      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0 },
+      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
     };
   }
@@ -18124,6 +18133,12 @@ const EIDETIC = (() => {
     if (!Number.isFinite(r.runtime.liveSyncTurn)) r.runtime.liveSyncTurn = -1;
     if (typeof r.runtime.liveSyncSig !== "string") r.runtime.liveSyncSig = "";
     if (typeof r.runtime.identityRepairDone !== "boolean") r.runtime.identityRepairDone = false;
+    if (!("pendingCommand" in r.runtime)) r.runtime.pendingCommand = null;
+    if (typeof r.runtime.lastMessage !== "string") r.runtime.lastMessage = "";
+    if (!r.runtime.cardPersistence) r.runtime.cardPersistence = "unknown";
+    if (!Number.isFinite(r.runtime.cardWriteFailures)) r.runtime.cardWriteFailures = 0;
+    if (!Number.isFinite(r.runtime.cardRetryTurn)) r.runtime.cardRetryTurn = 0;
+    if (typeof r.runtime.migrateOutputSpacingToPreserve !== "boolean") r.runtime.migrateOutputSpacingToPreserve = false;
     if (!Array.isArray(r.liveFacts)) r.liveFacts = [];
     if (!r.stats || typeof r.stats !== "object") r.stats = {};
     if (!r.last || typeof r.last !== "object") r.last = {};
@@ -18132,6 +18147,7 @@ const EIDETIC = (() => {
     const previousSchema = Number(r.schema) || 0;
     const needsSchemaMigration = previousSchema < SCHEMA_REVISION;
     if (previousSchema > 0 && previousSchema < 12) r.runtime.migrateDetectionDefaultToBalanced = true;
+    if (previousSchema > 0 && previousSchema < 15) r.runtime.migrateOutputSpacingToPreserve = true;
     const needsColdPacking = r.cold.some(x => x && !Array.isArray(x));
     if (needsSchemaMigration || needsColdPacking || Object.prototype.hasOwnProperty.call(r, "v")) {
       r.stats.migrations = (r.stats.migrations || 0) + 1;
@@ -18856,8 +18872,8 @@ const EIDETIC = (() => {
       storyTime: "on",
       narrativeRecall: "on",
       abstainOnMiss: "on",
-      activeCharacters: "4",
-      outputSpacing: "auto",
+      activeCharacters: "3",
+      outputSpacing: "preserve",
       debug: "off",
     };
   }
@@ -18938,11 +18954,11 @@ const EIDETIC = (() => {
       "If an explicit memory question has no matching evidence, EIDETIC tells the AI not to invent a past memory. Recommended: on.",
       "",
       "activeCharacters",
-      "Maximum number of NPC memory sections considered at once. Valid range: 1–8. Recommended: 4.",
+      "Maximum number of NPC memory sections considered at once. Valid range: 1–6. Recommended: 3.",
       "",
       "outputSpacing",
-      "auto = repairs a missing space when AI continuation text runs directly into the previous sentence.",
-      "preserve = leaves output spacing untouched.",
+      "preserve = recommended/default; leaves ordinary model output byte-for-byte unchanged.",
+      "auto = optional cosmetic repair for a missing continuation space; some clients may mark edited output.",
       "",
       "debug",
       "Extra diagnostics for troubleshooting. Leave off during normal play.",
@@ -18967,6 +18983,8 @@ const EIDETIC = (() => {
       "💡 NORMAL USE",
       "Just play. EIDETIC observes, stores and retrieves continuity automatically.",
       "Commands are optional tools, not required setup.",
+      "Phoenix/mobile note: slash commands use one tiny safe utility generation because stopping an Input hook causes AI Dungeon to show a script error.",
+      "A red context-warning triangle means some Plot Components did not fit their allocated context; EIDETIC keeps its own Front Memory compact but cannot suppress platform allocation warnings caused by other large/triggered components.",
       "",
       "🛠️ OPTIONAL COMMANDS",
       "/eidetic or /memory — quick status",
@@ -19051,6 +19069,7 @@ const EIDETIC = (() => {
     let idx = findConfigCardIndex();
     let created = false;
 
+    if (idx < 0 && !cardSyncAllowed(false)) return null;
     if (idx < 0 && typeof addStoryCard === "function") {
       try {
         const made = addStoryCard(EIDETIC_CONFIG.CONFIG_CARD_KEY, configCardEntry(), "Custom");
@@ -19061,6 +19080,11 @@ const EIDETIC = (() => {
     }
 
     if (idx < 0 || !storyCards[idx]) {
+      if(r&&r.runtime){
+        r.runtime.cardPersistence="degraded";
+        r.runtime.cardWriteFailures=Number(r.runtime.cardWriteFailures||0)+1;
+        r.runtime.cardRetryTurn=currentTurn()+EIDETIC_CONFIG.STORY_CARD_RETRY_TURNS;
+      }
       warnConfigCardUnavailable();
       return null;
     }
@@ -19075,19 +19099,23 @@ const EIDETIC = (() => {
       if (configValue(priorSource, "detectionMode") === "strict") values.detectionMode = "balanced";
       r.runtime.migrateDetectionDefaultToBalanced = false;
     }
+    if (r && r.runtime && r.runtime.migrateOutputSpacingToPreserve) {
+      values.outputSpacing = "preserve";
+      r.runtime.migrateOutputSpacingToPreserve = false;
+    }
     const panel = configCardEntry(values);
     const guide = configCardNotes();
     const fullEntry = panel + "\n\n" + guide;
 
     try { c.title = "🧠 EIDETIC — Config & Guide"; } catch (_) {}
-    // AI Dungeon's supported scripting fields are keys/entry/type. Persist through the
-    // official helper when available instead of relying on direct object mutation.
-    persistStoryCard(idx, EIDETIC_CONFIG.CONFIG_CARD_KEY, fullEntry, "Custom");
+    // Entry is the supported Story Card text field. Avoid rewriting an unchanged card
+    // three times per generation; this matters on Phoenix/mobile.
+    const needsWrite=safeText(c.entry!=null?c.entry:c.value)!==fullEntry ||
+      safeText(c.keys)!==EIDETIC_CONFIG.CONFIG_CARD_KEY || safeText(c.type)!=="Custom";
+    if(needsWrite) persistStoryCard(idx, EIDETIC_CONFIG.CONFIG_CARD_KEY, fullEntry, "Custom");
 
-    // Notes/description are best-effort mirrors only; Entry contains the complete guide.
-    const notesPersist = tryWriteConfigNotes(c, guide);
     if (r && r.runtime) {
-      r.runtime.configCardMode = notesPersist ? "entry+notes" : "entry";
+      r.runtime.configCardMode = "entry";
       r.runtime.configProbePending = false;
       r.runtime.configGuideSig = hash(panel);
       r.runtime.configCardWarned = false;
@@ -19103,10 +19131,8 @@ const EIDETIC = (() => {
     let panel = safeText(c.entry);
     if (!re.test(panel)) return false;
     panel = panel.replace(re, "$1" + safeText(value));
-    c.entry = panel;
-    if ("value" in c) {
-      try { c.value = panel; } catch (_) {}
-    }
+    const idx=findConfigCardIndex();
+    if(idx<0||!persistStoryCard(idx,EIDETIC_CONFIG.CONFIG_CARD_KEY,panel,"Custom"))return false;
     const r = root();
     if (r && r.runtime) r.runtime.configGuideSig = hash(panel);
     return true;
@@ -19134,7 +19160,7 @@ const EIDETIC = (() => {
     EIDETIC_CONFIG.DEBUG = bool("debug", false);
 
     const spacing = configValue(n,"outputSpacing");
-    EIDETIC_CONFIG.OUTPUT_SPACING = spacing === "preserve" ? "preserve" : "auto";
+    EIDETIC_CONFIG.OUTPUT_SPACING = spacing === "auto" ? "auto" : "preserve";
 
     const depth = configValue(n,"memoryDepth");
     if (depth === "compact") {
@@ -19147,15 +19173,15 @@ const EIDETIC = (() => {
 
     const recall = configValue(n,"recallSize");
     if (recall === "small") {
-      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS=1800; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION=0.08; EIDETIC_CONFIG.RECALL_MIN_CHARS=650;
+      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS=900; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION=0.03; EIDETIC_CONFIG.RECALL_MIN_CHARS=300;
     } else if (recall === "large") {
-      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS=4200; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION=0.16; EIDETIC_CONFIG.RECALL_MIN_CHARS=1000;
+      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS=2200; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION=0.07; EIDETIC_CONFIG.RECALL_MIN_CHARS=550;
     } else {
-      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS=3200; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION=0.12; EIDETIC_CONFIG.RECALL_MIN_CHARS=850;
+      EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS=1500; EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION=0.05; EIDETIC_CONFIG.RECALL_MIN_CHARS=400;
     }
 
     const ac = Number(configValue(n,"activeCharacters"));
-    EIDETIC_CONFIG.MAX_ACTIVE_CHARACTERS = Number.isFinite(ac) ? Math.max(1,Math.min(8,Math.floor(ac))) : 4;
+    EIDETIC_CONFIG.MAX_ACTIVE_CHARACTERS = Number.isFinite(ac) ? Math.max(1,Math.min(6,Math.floor(ac))) : 3;
     if (r) r.debug = EIDETIC_CONFIG.DEBUG;
   }
 
@@ -19181,21 +19207,33 @@ const EIDETIC = (() => {
   }
 
   function persistStoryCard(index, keys, entry, type) {
+    const r=root();
     if (typeof storyCards==="undefined" || !Array.isArray(storyCards) || index<0 || !storyCards[index]) return false;
-    let ok=false;
+    if(!cardSyncAllowed(false))return false;
+    let apiOk=false, localOk=false;
     if (typeof updateStoryCard==="function") {
-      try { updateStoryCard(index, keys, entry, type); ok=true; } catch (_) {}
+      try { updateStoryCard(index, keys, entry, type); apiOk=true; } catch (_) {}
     }
-    // Keep this hook's local storyCards view coherent as well. AI Dungeon's official
-    // updateStoryCard helper is the persistence path; direct assignment is fallback/test support.
+    // Local mutation keeps this hook coherent and supports older engines, but only the
+    // official helper is considered a confirmed persistence path.
     try {
       storyCards[index].keys=keys;
       storyCards[index].entry=entry;
       storyCards[index].type=type;
       if ("value" in storyCards[index]) storyCards[index].value=entry;
-      ok=true;
+      localOk=true;
     } catch (_) {}
-    return ok;
+    if(r&&r.runtime){
+      const c=storyCards[index]||{};
+      r.runtime.cardExpected={id:c.id!=null?c.id:null,keys:safeText(keys),hash:hash(safeText(entry)),turn:currentTurn()};
+      r.runtime.cardPersistence=apiOk?"pending":(localOk?"local-only":"degraded");
+      if(!apiOk&&!localOk){
+        r.runtime.cardWriteFailures=Number(r.runtime.cardWriteFailures||0)+1;
+        r.stats.cardWriteFailures=Number(r.stats.cardWriteFailures||0)+1;
+        r.runtime.cardRetryTurn=currentTurn()+EIDETIC_CONFIG.STORY_CARD_RETRY_TURNS;
+      }
+    }
+    return apiOk||localOk;
   }
 
   function stableStoryCardEntry(card) {
@@ -19246,33 +19284,52 @@ const EIDETIC = (() => {
     return -1;
   }
   function liveFactsForCharacter(charKey, limit) {
-    const r=root(); if(!r)return[]; const out=[];
-    for(let i=r.liveFacts.length-1;i>=0&&out.length<(limit||EIDETIC_CONFIG.CARD_NOTE_FACTS);i--){
+    const r=root(); if(!r)return[];
+    const max=limit||EIDETIC_CONFIG.CARD_NOTE_FACTS, direct=[], witnessed=[];
+    // Character-card continuity is primarily ABOUT the character. Merely witnessing a
+    // general scene must not evict direct personal/state facts from the small card block.
+    for(let i=r.liveFacts.length-1;i>=0;i--){
       const f=r.liveFacts[i]; if(!f)continue;
-      if((f.names||[]).indexOf(charKey)>=0 || (f.owners||[]).indexOf(charKey)>=0)out.push(f);
+      if((f.names||[]).indexOf(charKey)>=0) direct.push(f);
+      else if((f.owners||[]).indexOf(charKey)>=0) witnessed.push(f);
+      if(direct.length>=max && witnessed.length>=max)break;
     }
-    return out.reverse();
+    const picked=direct.slice(0,max);
+    // Witness-only facts are useful as a last resort, but keep at most one and only
+    // when the card has spare room after character-specific facts.
+    if(picked.length<max && witnessed.length) picked.push(witnessed[0]);
+    return picked.slice(0,max).sort((a,b)=>Number(a.turn||0)-Number(b.turn||0));
   }
   function liveFactLine(f){ return "T"+f.turn+" ["+f.status+"] "+displayText(f.text,EIDETIC_CONFIG.LIVE_FACT_CHARS); }
   function writeCharacterLiveNotes(charKey) {
     if(!(EIDETIC_CONFIG.SYNC_STORY_CARD_ENTRIES || EIDETIC_CONFIG.SYNC_STORY_CARD_NOTES))return false;
+    if(!cardSyncAllowed(false))return false;
     const idx=findStoryCardForCharacter(charKey); if(idx<0)return false;
-    const facts=liveFactsForCharacter(charKey,EIDETIC_CONFIG.CARD_NOTE_FACTS); if(!facts.length)return false;
+    let facts=liveFactsForCharacter(charKey,EIDETIC_CONFIG.CARD_NOTE_FACTS); if(!facts.length)return false;
     const c=storyCards[idx];
     const original=safeText(c.entry!=null?c.entry:c.value);
     const base=stripManagedEntryBlock(original,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
-    const block=EIDETIC_ENTRY_OPEN+"\n"+
-      "PRIVATE CONTINUITY FOR THIS CHARACTER. Do not grant these memories to another character merely because this Story Card is visible. Newer played events override stale setup text. "+
-      "FACT is observed/played; CLAIM, BELIEF, INFERENCE and UNCONFIRMED are not objective fact.\n"+
-      facts.map(liveFactLine).join("\n")+"\n"+EIDETIC_ENTRY_CLOSE;
-    const next=(base?base+"\n\n":"")+block;
-    if(original===next)return false;
-    if(!persistStoryCard(idx,safeText(c.keys),next,safeText(c.type)||"Character"))return false;
-    const r=root();
-    r.stats.cardEntryWrites=Number(r.stats.cardEntryWrites||0)+1;
-    // Keep the legacy counter so old /live expectations and saved diagnostics remain meaningful.
-    r.stats.cardNoteWrites=Number(r.stats.cardNoteWrites||0)+1;
-    return true;
+    // Never bloat a large hand-written card merely to mirror state that is already
+    // available through Front Memory.
+    if(base.length>=EIDETIC_CONFIG.MAX_CHARACTER_CARD_ENTRY_CHARS-220)return false;
+    const header=EIDETIC_ENTRY_OPEN+"\n"+
+      "PRIVATE CURRENT CONTINUITY. Do not grant this knowledge to other characters. "+
+      "CLAIM/BELIEF/INFERENCE/UNCONFIRMED are not objective fact.\n";
+    let lines=facts.map(liveFactLine);
+    while(lines.length){
+      const block=header+lines.join("\n")+"\n"+EIDETIC_ENTRY_CLOSE;
+      const next=(base?base+"\n\n":"")+block;
+      if(next.length<=EIDETIC_CONFIG.MAX_CHARACTER_CARD_ENTRY_CHARS){
+        if(original===next)return false;
+        if(!persistStoryCard(idx,safeText(c.keys),next,safeText(c.type)||"Character"))return false;
+        const r=root();
+        r.stats.cardEntryWrites=Number(r.stats.cardEntryWrites||0)+1;
+        r.stats.cardNoteWrites=Number(r.stats.cardNoteWrites||0)+1;
+        return true;
+      }
+      lines.shift();
+    }
+    return false;
   }
 
   function findCurrentContinuityCardIndex(){
@@ -19292,7 +19349,9 @@ const EIDETIC = (() => {
 
   function ensureCurrentContinuityCard(){
     if(!EIDETIC_CONFIG.AUTO_CURRENT_CONTINUITY_CARD||typeof storyCards==="undefined"||!Array.isArray(storyCards))return null;
+    const r=root();
     let idx=findCurrentContinuityCardIndex();
+    if(idx<0&&!cardSyncAllowed(false))return null;
     if(idx<0&&typeof addStoryCard==="function"){
       try{
         const made=addStoryCard(EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY,currentContinuityCardEntry([]),"Custom");
@@ -19300,9 +19359,16 @@ const EIDETIC = (() => {
         if(idx<0)idx=findCurrentContinuityCardIndex();
       }catch(_){}
     }
-    if(idx<0||!storyCards[idx])return null;
-    const c=storyCards[idx],r=root();
-    if(c.id!=null)r.runtime.liveCardId=c.id;
+    if(idx<0||!storyCards[idx]){
+      if(r&&r.runtime){
+        r.runtime.cardPersistence="degraded";
+        r.runtime.cardWriteFailures=Number(r.runtime.cardWriteFailures||0)+1;
+        r.runtime.cardRetryTurn=currentTurn()+EIDETIC_CONFIG.STORY_CARD_RETRY_TURNS;
+      }
+      return null;
+    }
+    const c=storyCards[idx];
+    if(c.id!=null&&r&&r.runtime)r.runtime.liveCardId=c.id;
     // title is best-effort metadata only; keys/entry/type are the supported scripting fields.
     try{c.title="🧠 EIDETIC — Current Played Continuity";}catch(_){}
     return {card:c,index:idx};
@@ -19322,6 +19388,7 @@ const EIDETIC = (() => {
 
   function syncLiveStoryCards(force){
     const r=root(); if(!r||typeof storyCards==="undefined"||!Array.isArray(storyCards))return;
+    if(!cardSyncAllowed(!!force))return;
     const t=currentTurn(), lf=r.liveFacts||[];
     const last=lf.length?lf[lf.length-1]:null;
     const sig=lf.length+"|"+(last?(last.fp||last.id||""):"")+"|"+(last?Number(last.turn||0):0);
@@ -19641,7 +19708,7 @@ const EIDETIC = (() => {
     for (let i = 0; i < aliases.length; i++) {
       const a = escapeRe(aliases[i]);
       const lead = "(?:^|[^A-Za-z0-9])" + a + "(?:[^A-Za-z0-9]|$)";
-      if (new RegExp(lead + "[^.!?]{0,42}\\b(?:lives?|resides?|stays?)\\s+(?:in|at|on|near|with)\\b|" + lead + "[^.!?]{0,42}\\b(?:moved|moves|relocated)\\s+(?:to|into|back to)\\b|" + lead + "[^.!?]{0,42}\\bis\\s+(?:now\\s+|currently\\s+)?(?:based|located)\\s+(?:in|at|on|near)\\b", "i").test(text)) add("location");
+      if (new RegExp(lead + "[^.!?]{0,42}\\b(?:lives?|resides?|stays?)\\s+(?:in|at|on|near|with)\\b|" + lead + "[^.!?]{0,42}\\b(?:moved|moves|relocated)\\s+(?:(?:from\\s+[^.!?]{1,70}?\\s+)?(?:to|into|back to))\\b|" + lead + "[^.!?]{0,42}\\bis\\s+(?:now\\s+|currently\\s+)?(?:based|located)\\s+(?:in|at|on|near)\\b", "i").test(text)) add("location");
       if (new RegExp(lead + "[^.!?]{0,36}\\b(?:works?|serves?)\\s+as\\b|" + lead + "[^.!?]{0,36}\\b(?:became|becomes|is|remains)\\s+(?:an?\\s+)?(?:" + DETECT_ROLE_ALT + ")\\b", "i").test(text)) add("role");
       if (new RegExp(lead + "[^.!?]{0,34}\\b(?:is|was|became|becomes|remains|has become)\\s+(?:now\\s+|currently\\s+|still\\s+)?(?:dead|alive|resurrected|revived|injured|wounded|pregnant|missing|unconscious|awake|ill|sick|healthy|retired|imprisoned|incarcerated|hospitalized|hospitalised)\\b|" + lead + "[^.!?]{0,24}\\b(?:dies|died|recovered|recovers)\\b", "i").test(text)) add("status");
       if (new RegExp(lead + "[^.!?]{0,42}\\b(?:is|became|becomes|remains)\\s+(?:now\\s+|currently\\s+)?(?:married to|dating|engaged to|friends with|estranged from|divorced from|separated from|in a relationship with)\\b", "i").test(text)) add("relationship");
@@ -21102,7 +21169,7 @@ const EIDETIC = (() => {
     for (let i = history.length - 1; i >= 0 && picked.length < maxActions; i--) {
       const item = history[i] || {};
       let txt = cleanText(safeText(item.text != null ? item.text : item.rawText));
-      if (!txt) continue;
+      if (!txt || isCommandArtifact(txt)) continue;
       const perAction = Math.max(500, Number(EIDETIC_CONFIG.BOOTSTRAP_ACTION_CHARS) || 6000);
       if (txt.length > perAction) {
         const half = Math.floor((perAction - 5) / 2);
@@ -21164,6 +21231,17 @@ const EIDETIC = (() => {
     setMessage(msg);
   }
 
+  function recentNonCommandHistory(limit) {
+    const out=[];
+    if(typeof history==="undefined"||!Array.isArray(history))return out;
+    for(let i=history.length-1;i>=0&&out.length<(limit||1);i--){
+      const h=cleanText(safeText(history[i]&&(history[i].text!=null?history[i].text:history[i].rawText)));
+      if(!h||isCommandArtifact(h))continue;
+      out.unshift(h);
+    }
+    return out;
+  }
+
   function buildQuery(extraText) {
     const focus = cleanText(extraText || "");
     if (focus) {
@@ -21174,18 +21252,12 @@ const EIDETIC = (() => {
       // here was a major source of irrelevant character/world recall.
       if (!lowDirection || directQuestion || explicitRecallLanguage(focus) || focus.length >= 64 || namesMentioned(focus).length || contentTokens.length>=2) return focus.slice(-1400);
       const parts = [];
-      if (typeof history !== "undefined" && Array.isArray(history) && history.length) {
-        const h = cleanText(safeText(history[history.length - 1] && history[history.length - 1].text));
-        if (h) parts.push(h.slice(-420));
-      }
+      const prior=recentNonCommandHistory(1);
+      if(prior.length)parts.push(prior[0].slice(-420));
       parts.push(focus);
       return cleanText(parts.join(" ")).slice(-1400);
     }
-    const parts = [];
-    if (typeof history !== "undefined" && Array.isArray(history)) {
-      const start = Math.max(0, history.length - 2);
-      for (let i = start; i < history.length; i++) parts.push(safeText(history[i] && history[i].text));
-    }
+    const parts = recentNonCommandHistory(2);
     return cleanText(parts.join(" ")).slice(-1400);
   }
 
@@ -21193,12 +21265,19 @@ const EIDETIC = (() => {
     const r = root();
     let maxChars = r && r.runtime && Number.isFinite(r.runtime.lastMaxChars) ? r.runtime.lastMaxChars : 0;
     if (typeof info !== "undefined" && info && Number.isFinite(info.maxChars)) maxChars = info.maxChars;
-    if (!maxChars) return Math.min(EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS, 2200);
-    let budget = Math.floor(maxChars * EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION);
-    const safeFloor = Math.min(EIDETIC_CONFIG.RECALL_MIN_CHARS, budget);
-    budget = Math.max(safeFloor, budget);
-    budget = Math.min(EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS, budget);
-    if (typeof info !== "undefined" && info && Number.isFinite(info.memoryLength) && info.memoryLength > maxChars * 0.45) budget = Math.max(EIDETIC_CONFIG.RECALL_MIN_CHARS, Math.floor(budget * 0.7));
+    if (!maxChars) return Math.min(EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS, 1400);
+
+    const memoryLength=(typeof info!=="undefined"&&info&&Number.isFinite(info.memoryLength))?Math.max(0,info.memoryLength):0;
+    const nominal=Math.min(EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS,Math.max(EIDETIC_CONFIG.RECALL_MIN_CHARS,Math.floor(maxChars*EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION)));
+    const headroom=Math.floor(maxChars*EIDETIC_CONFIG.CONTEXT_HEADROOM_FRACTION);
+    const freeAfterMemory=Math.max(0,maxChars-memoryLength-headroom);
+    // Front Memory is Required and never truncated by AI Dungeon, so reserve room for
+    // history/cards/model components instead of filling all apparently unused context.
+    let budget=Math.min(nominal,Math.max(280,Math.floor(freeAfterMemory*0.16)));
+    if(memoryLength>maxChars*0.50)budget=Math.min(budget,700);
+    else if(memoryLength>maxChars*0.35)budget=Math.min(budget,1000);
+    budget=Math.max(280,Math.min(EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS,budget));
+    if(r&&r.stats&&budget<nominal)r.stats.contextTrimAvoided=Number(r.stats.contextTrimAvoided||0)+1;
     return budget;
   }
 
@@ -21267,13 +21346,20 @@ const EIDETIC = (() => {
     seedFromStoryCards();
     const query = buildQuery(extraText);
     const turn = currentTurn();
-    const budget = effectiveRecallBudget();
+    const plan = makeQueryPlan(query);
+    let budget = effectiveRecallBudget();
+    // An explicit memory question deserves enough room to return at least one useful
+    // verified answer even on small-context models. Routine turns stay aggressively compact.
+    if (plan.explicitRecall) {
+      const maxCtx=(typeof info!=="undefined"&&info&&Number.isFinite(info.maxChars))?Number(info.maxChars):0;
+      const explicitFloor=Math.min(EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS,Math.max(750,maxCtx?Math.floor(maxCtx*0.08):750));
+      budget=Math.max(budget,explicitFloor);
+    }
     const sceneSig = Object.keys(r.scene || {}).sort().map(k => k + ":" + r.scene[k]).join(",");
     const focusSig = (r.manualFocus || []).join(",");
     const cacheKey = hash([turn, r.seq || 0, query, budget, sceneSig, focusSig, Object.keys(r.chars || {}).length, r.world ? Object.keys(r.world.entities||{}).length : 0, r.world ? (r.world.facts||[]).length : 0, r.world ? currentStoryHours() : 0, r.liveFacts ? r.liveFacts.length : 0, r.liveFacts && r.liveFacts.length ? r.liveFacts[r.liveFacts.length-1].fp : ""].join("|"));
     if (r.runtime.recallCacheKey === cacheKey) return r.runtime.recallCacheBlock || "";
 
-    const plan = makeQueryPlan(query);
     const active = activeCharacters(query, plan);
     const body = [];
 
@@ -21486,9 +21572,47 @@ const EIDETIC = (() => {
   }
 
   function setMessage(msg) {
-    if (typeof state !== "undefined" && state) state.message = safeText(msg).slice(0, 900);
-    if (typeof log === "function") log("EIDETIC: " + safeText(msg));
-    else if (typeof console !== "undefined" && console.log) console.log("EIDETIC: " + safeText(msg));
+    const r = root();
+    const out = safeText(msg).replace(/\s+/g, " ").trim().slice(0, 1000);
+    if (r && r.runtime) r.runtime.lastMessage = out;
+    // Phoenix documents state.message as not yet implemented. Keep it opt-in only
+    // for legacy clients so it cannot be a mobile failure dependency.
+    if (EIDETIC_CONFIG.LEGACY_STATE_MESSAGE && typeof state !== "undefined" && state) {
+      try { state.message = out; } catch (_) {}
+    }
+    if (typeof log === "function") log("EIDETIC: " + out);
+    else if (typeof console !== "undefined" && console.log) console.log("EIDETIC: " + out);
+    return out;
+  }
+
+  function isCommandArtifact(text) {
+    const t = safeText(text);
+    return t.indexOf(COMMAND_INPUT_MARKER) >= 0 ||
+      /^\s*EIDETIC\s*[•:-]/im.test(t) ||
+      /^\s*\/(?:eidetic|memory|remember|recall|focus|roster|world|timeline|entity|live|memstats|memdetect|memdebug|memclear)\b/im.test(t);
+  }
+
+  function stripCommandArtifactsFromContext(text) {
+    let t = safeText(text);
+    if (!t || !isCommandArtifact(t)) return t;
+    t = t.replace(new RegExp("^.*" + escapeRe(COMMAND_INPUT_MARKER) + ".*(?:\\r?\\n|$)", "gmi"), "");
+    t = t.replace(/^\s*EIDETIC\s*[•:-].*(?:\r?\n|$)/gmi, "");
+    t = t.replace(/^\s*>?\s*(?:You\s+(?:say\s+)?["“]?)?\/(?:eidetic|memory|remember|recall|focus|roster|world|timeline|entity|live|memstats|memdetect|memdebug|memclear)\b.*(?:\r?\n|$)/gmi, "");
+    return t.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  function finishCommand(cmd) {
+    const r = root();
+    const display = r && r.runtime && r.runtime.pendingCommandInput ? safeText(r.runtime.pendingCommandInput) : ("/" + safeText(cmd));
+    if (!r) return { text: display || ("/" + safeText(cmd)), stop: false };
+    const result = safeText(r.runtime.lastMessage) || ("Command /" + safeText(cmd) + " completed.");
+    r.runtime.pendingCommand = { command: safeText(cmd), result, turn: currentTurn() };
+    r.runtime.pendingCommandInput = "";
+    r.stats.commandTurns = Number(r.stats.commandTurns || 0) + 1;
+    // Never use stop in onInput: AI Dungeon documents that it produces the red
+    // "Unable to run scenario scripts" error. Keep the user's command as non-empty
+    // input, run one tiny utility generation, then replace that generation in onOutput.
+    return { text: display || ("/" + safeText(cmd)), stop: false };
   }
 
   function handleCommand(raw) {
@@ -21499,50 +21623,51 @@ const EIDETIC = (() => {
     if (!m) return null;
     const cmd = m[1].toLowerCase();
     const arg = (m[2] || "").trim();
+    if (r && r.runtime) r.runtime.pendingCommandInput = s;
 
     if (cmd === "eidetic" || cmd === "memory") {
       const chars = Object.keys(r.chars).length;
       setMessage("EIDETIC • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • " + r.ledger.length + " current-state facts • " + (r.liveFacts||[]).length + " live continuity facts • " + (r.world ? Object.keys(r.world.entities||{}).length : 0) + " world entities • " + (r.world ? r.world.timeline.length : 0) + " timeline events • existing-history import " + Number(r.runtime.bootstrapImported || 0) + " actions • turn " + currentTurn());
-      return { text: null, stop: true };
+      return finishCommand(cmd);
     }
 
     if (cmd === "live") {
       syncLiveStoryCards(true);
       const lf=(r.liveFacts||[]).slice(-8);
-      setMessage("EIDETIC live continuity: "+(r.liveFacts||[]).length+" durable facts • "+Number(r.stats.cardEntryWrites||0)+" character-entry writes • "+Number(r.stats.liveCardWrites||0)+" continuity-card entry writes • "+Number(r.stats.liveRecallInjects||0)+" live-recall injections"+(lf.length?" • latest: "+lf.map(liveFactLine).join(" • "):""));
-      return { text:null, stop:true };
+      setMessage("EIDETIC live continuity: "+(r.liveFacts||[]).length+" durable facts • "+Number(r.stats.cardEntryWrites||0)+" character-entry writes • "+Number(r.stats.liveCardWrites||0)+" continuity-card writes • "+Number(r.stats.liveRecallInjects||0)+" live-recall injections • card sync "+safeText(r.runtime.cardPersistence||"unknown")+(Number(r.runtime.cardWriteFailures||0)?" ("+Number(r.runtime.cardWriteFailures||0)+" failed persistence checks)":"")+(lf.length?" • latest: "+lf.map(liveFactLine).join(" • "):""));
+      return finishCommand(cmd);
     }
 
     if (cmd === "memstats") {
       const approx = JSON.stringify(r).length;
       setMessage("EIDETIC archive: " + r.hot.length + " hot + " + r.cold.length + " cold + " + r.anchors.length + " anchors + " + r.ledger.length + " state facts + " + (r.world ? r.world.facts.length : 0) + " world facts + " + (r.world ? r.world.timeline.length : 0) + " timeline events • ~" + Math.round(approx / 1024) + " KB serialized • recall rev " + (r.runtime.recallRev || 0) + " • retry purges " + (r.stats.retryPurges || 0));
-      return { text: null, stop: true };
+      return finishCommand(cmd);
     }
 
     if (cmd === "roster") {
       const names = Object.keys(r.chars).map(k => r.chars[k].name).slice(0, 30);
       setMessage("Tracked characters: " + (names.length ? names.join(", ") : "none yet"));
-      return { text: null, stop: true };
+      return finishCommand(cmd);
     }
 
     if (cmd === "world") {
       const w=r.world||{entities:{},facts:[],timeline:[],clock:{}};
       const date=currentStoryDateLabel();
       setMessage("World memory: "+Object.keys(w.entities||{}).length+" entities • "+(w.facts||[]).length+" current/history facts • "+(w.timeline||[]).length+" timeline events"+(w.clock&&w.clock.knownElapsed?" • story time "+(w.clock.partial?"at least ":"")+formatDurationHours(currentStoryHours())+" explicitly elapsed"+(w.clock.partial?" + unquantified time":""):"")+(date?" • date "+date:""));
-      return { text:null, stop:true };
+      return finishCommand(cmd);
     }
     if (cmd === "timeline") {
       const ev=(r.world&&r.world.timeline?r.world.timeline:[]).filter(e=>e.category!=="time-gap"&&e.category!=="current-date"&&e.category!=="time-uncertain").slice(-8);
       setMessage("Recent timeline: "+(ev.length?ev.map(e=>(relativeAgeLabel(e.storyHours)||("T"+e.turn))+" — "+displayText(e.text,90)).join(" • "):"no major world events stored yet"));
-      return { text:null, stop:true };
+      return finishCommand(cmd);
     }
     if (cmd === "entity") {
-      const q=worldNorm(arg), w=r.world; if(!q||!w){setMessage("Usage: /entity Name");return{text:null,stop:true};}
+      const q=worldNorm(arg), w=r.world; if(!q||!w){setMessage("Usage: /entity Name");return finishCommand(cmd);}
       const keys=Object.keys(w.entities||{}).filter(k=>{const e=w.entities[k];return worldNorm(e.name)===q||(e.aliases||[]).some(a=>worldNorm(a)===q)});
-      if(!keys.length){setMessage("No tracked world entity named "+arg+".");return{text:null,stop:true};}
+      if(!keys.length){setMessage("No tracked world entity named "+arg+".");return finishCommand(cmd);}
       const e=w.entities[keys[0]], facts=(w.facts||[]).filter(f=>f.entity===keys[0]).slice(-5);
       setMessage(e.name+" ["+e.type+"]: "+(facts.length?facts.map(f=>f.slot+"="+displayText(f.text,85)).join(" • "):"tracked, no current facts yet"));
-      return {text:null,stop:true};
+      return finishCommand(cmd);
     }
 
     if (cmd === "memdetect") {
@@ -21551,7 +21676,7 @@ const EIDETIC = (() => {
       const wc = r.world && r.world.candidates ? Object.keys(r.world.candidates).length : 0;
       const we = r.world && r.world.entities ? Object.keys(r.world.entities).length : 0;
       setMessage("EIDETIC detector: " + DETECTION_FORTRESS_EXTRA_ROWS.length + " expanded detection rows • " + Object.keys(r.chars || {}).length + " characters • " + Object.keys(r.candidates || {}).length + " character candidates • " + we + " world entities • " + wc + " world candidates • " + Number(r.stats.detectorRejected || 0) + " character junk rejected • " + Number(r.stats.worldCandidateRejected || 0) + " world junk rejected • " + Number(r.stats.detectorPruned || 0) + " character candidates pruned • " + Number(r.stats.worldCandidatePruned || 0) + " world candidates pruned" + (preview ? " • watching characters: " + preview : ""));
-      return { text: null, stop: true };
+      return finishCommand(cmd);
     }
 
     if (cmd === "focus") {
@@ -21568,20 +21693,20 @@ const EIDETIC = (() => {
         }
         setMessage("EIDETIC focus: " + (r.manualFocus.join(", ") || "none"));
       }
-      return { text: null, stop: true };
+      return finishCommand(cmd);
     }
 
     if (cmd === "remember") {
       const parts = arg.split("|");
       if (parts.length < 2) {
         setMessage("Usage: /remember Character | fact   or   /remember * | world fact");
-        return { text: null, stop: true };
+        return finishCommand(cmd);
       }
       const who = parts.shift().trim();
       const fact = parts.join("|").trim();
       if (!fact) {
         setMessage("Nothing to remember.");
-        return { text: null, stop: true };
+        return finishCommand(cmd);
       }
       let owners;
       if (who === "*") owners = new Set(["*"]);
@@ -21595,7 +21720,7 @@ const EIDETIC = (() => {
       addStateFacts(fact, owners, currentTurn(), "manual", "manual:" + hash(fact), "event", true);
       addWorldMemory(fact, owners, currentTurn(), "manual", "manual:" + hash(fact), "event");
       setMessage("Pinned memory for " + who + ": " + displayText(fact, 180));
-      return { text: null, stop: true };
+      return finishCommand(cmd);
     }
 
     if (cmd === "recall") {
@@ -21605,33 +21730,78 @@ const EIDETIC = (() => {
       const k = getCharKey(who);
       if (!k) {
         setMessage("Unknown character. Use /roster or /focus Name first.");
-        return { text: null, stop: true };
+        return finishCommand(cmd);
       }
       const got = retrieveForCharacter(k, q);
       const lines = got.anchors.concat(got.memories).slice(0, 6).map(x => "T" + x.turn + " " + displayText(x.text, 110));
       setMessage(r.chars[k].name + " recalls: " + (lines.length ? lines.join(" • ") : "no matching archived memory"));
-      return { text: null, stop: true };
+      return finishCommand(cmd);
     }
 
     if (cmd === "memdebug") {
       if (/^on$/i.test(arg)) { r.debug = true; setConfigValueInCard("debug", "on"); }
       else if (/^off$/i.test(arg)) { r.debug = false; setConfigValueInCard("debug", "off"); }
       setMessage("EIDETIC debug " + (r.debug ? "ON" : "OFF"));
-      return { text: null, stop: true };
+      return finishCommand(cmd);
     }
 
     if (cmd === "memclear") {
       if (arg !== "CONFIRM") {
         setMessage("To erase EIDETIC's archive, type /memclear CONFIRM");
-        return { text: null, stop: true };
+        return finishCommand(cmd);
       }
       delete state[ROOT];
       if (state.memory && state.memory.frontMemory) state.memory.frontMemory = removeOurFrontMemory(state.memory.frontMemory);
       setMessage("EIDETIC archive cleared.");
-      return { text: null, stop: true };
+      return finishCommand(cmd);
     }
     return null;
   }
+
+
+  function verifyStoryCardPersistence() {
+    const r=root(); if(!r||!r.runtime||!r.runtime.cardExpected)return;
+    const exp=r.runtime.cardExpected;
+    if(Number(exp.turn||0)>=currentTurn())return;
+    let found=null;
+    if(typeof storyCards!=="undefined"&&Array.isArray(storyCards)){
+      for(let i=0;i<storyCards.length;i++){
+        const c=storyCards[i]||{};
+        if(exp.id!=null&&String(c.id)===String(exp.id)){found=c;break;}
+        if(exp.keys&&splitKeys(c.keys).indexOf(exp.keys)>=0){found=c;break;}
+      }
+    }
+    if(found&&hash(safeText(found.entry!=null?found.entry:found.value))===exp.hash){
+      r.runtime.cardPersistence="ok";
+      r.runtime.cardWriteFailures=0;
+    }else{
+      r.runtime.cardPersistence="degraded";
+      r.runtime.cardWriteFailures=Number(r.runtime.cardWriteFailures||0)+1;
+      r.stats.cardWriteFailures=Number(r.stats.cardWriteFailures||0)+1;
+      r.runtime.cardRetryTurn=currentTurn()+EIDETIC_CONFIG.STORY_CARD_RETRY_TURNS;
+    }
+    r.runtime.cardExpected=null;
+  }
+
+  function cardSyncAllowed(force) {
+    const r=root(); if(!r||!r.runtime)return false;
+    if(force)return true;
+    if(r.runtime.cardPersistence!=="degraded")return true;
+    return currentTurn()>=Number(r.runtime.cardRetryTurn||0);
+  }
+
+  function utilityCommandContext() {
+    return "EIDETIC utility command. This is not a story action. Output a single period only.";
+  }
+
+  function consumePendingCommandOutput() {
+    const r=root(); if(!r||!r.runtime||!r.runtime.pendingCommand)return null;
+    const pending=r.runtime.pendingCommand;
+    r.runtime.pendingCommand=null;
+    const msg=safeText(pending.result)||("Command /"+safeText(pending.command)+" completed.");
+    return /^EIDETIC\s*[•:-]/i.test(msg) ? msg : COMMAND_OUTPUT_PREFIX+msg;
+  }
+
 
   function debugLog(msg) {
     const r = root();
@@ -21643,12 +21813,12 @@ const EIDETIC = (() => {
   function init() {
     const r = root();
     if (!r) return;
+    verifyStoryCardPersistence();
     seedPlayerIdentity();
     seedConfiguredCharacters();
     applyConfigCard();
     seedFromStoryCards();
     seedWorldEntitiesFromStoryCards();
-    syncLiveStoryCards(false);
     const imported = bootstrapExistingHistory();
     announceActivation(imported);
     rollbackFuture(currentTurn());
@@ -21663,18 +21833,29 @@ const EIDETIC = (() => {
 
     if (hook === "input") {
       const command = handleCommand(text);
-      if (command) return command;
+      if (command) {
+        clearFrontMemory();
+        return command;
+      }
       ingest(text, "input");
       // Once real play begins, do not later re-import that same first action from history.
       if (!r.runtime.bootstrapDone && cleanText(text)) r.runtime.bootstrapDone = true;
       const block = buildRecall(text);
       if (block) setFrontMemory(block);
-      else clearFrontMemory(); // Never let a previous turn's packet linger as current front memory.
+      else clearFrontMemory();
       debugLog("input turn=" + currentTurn() + " hot=" + r.hot.length + " cold=" + r.cold.length);
       return { text: text, stop: false };
     }
 
     if (hook === "context" || hook === "contextAppend") {
+      // Mobile/Phoenix-safe command path: never return stop from Input or Context.
+      // The command costs a tiny utility generation which Output intercepts.
+      if (r.runtime.pendingCommand) {
+        clearFrontMemory();
+        return { text: utilityCommandContext(), stop: false };
+      }
+
+      let contextText = stripCommandArtifactsFromContext(text);
       let block = currentFrontRecallBlock();
       if (!block) block = buildRecall("");
       if (!block) {
@@ -21684,19 +21865,37 @@ const EIDETIC = (() => {
       }
       if (block) {
         setFrontMemory(block);
-        if (EIDETIC_CONFIG.APPEND_CONTEXT_FALLBACK && !currentRecallAlreadyInText(text, block)) {
-          const out = safeText(text) + (safeText(text).endsWith("\n") ? "" : "\n") + block;
-          debugLog("context appended " + block.length + " chars");
+        // Front Memory is an official Required context component and is always included
+        // in full. Appending the same block to Context duplicates tokens and can trigger
+        // false-looking context warnings, so fallback append is disabled by default.
+        if (EIDETIC_CONFIG.APPEND_CONTEXT_FALLBACK && !currentRecallAlreadyInText(contextText, block)) {
+          const out = safeText(contextText) + (safeText(contextText).endsWith("\n") ? "" : "\n") + block;
+          debugLog("context fallback appended " + block.length + " chars");
           return { text: out, stop: false };
         }
       }
-      return { text: text, stop: false };
+      return { text: contextText, stop: false };
     }
 
     if (hook === "output") {
-      let cleaned = normalizeOutputSpacing(scrubLeak(text));
-      if (cleaned === "") cleaned = " ";
+      const commandResult = consumePendingCommandOutput();
+      if (commandResult != null) {
+        // Do not ingest the model's throwaway utility output as story memory.
+        r.stats.outputModified=Number(r.stats.outputModified||0)+1;
+        return { text: commandResult || "EIDETIC • command completed.", stop: false };
+      }
+
+      const original = safeText(text);
+      let cleaned = scrubLeak(original);
+      // Preserve ordinary model output byte-for-byte by default. Cosmetic spacing edits
+      // are opt-in only; users who explicitly select outputSpacing=auto accept that edit.
+      if (EIDETIC_CONFIG.OUTPUT_SPACING === "auto") cleaned = normalizeOutputSpacing(cleaned);
+      if (cleaned === "") cleaned = original || " ";
+      if (cleaned === original) r.stats.outputPassThrough=Number(r.stats.outputPassThrough||0)+1;
+      else r.stats.outputModified=Number(r.stats.outputModified||0)+1;
+
       ingest(cleaned, "output");
+      syncLiveStoryCards(false);
       if (EIDETIC_CONFIG.REFRESH_RECALL_AFTER_OUTPUT) {
         const block = buildRecall(cleaned);
         if (block) setFrontMemory(block);
@@ -21746,6 +21945,8 @@ const EIDETIC = (() => {
     recOrigin: recOrigin,
     relevantLiveContinuity: relevantLiveContinuity,
     persistStoryCard: persistStoryCard,
+    stripCommandArtifactsFromContext: stripCommandArtifactsFromContext,
+    cardSyncAllowed: cardSyncAllowed,
   };
 
   return run;

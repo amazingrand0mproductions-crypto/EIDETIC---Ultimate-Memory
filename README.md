@@ -366,7 +366,7 @@ EIDETIC can repair a missing separator between the player's text and an AI conti
 
 `Earl Grey blends.As the British couple...`
 
-from appearing as one broken sentence. The default `auto` mode fixes the seam only when needed; `preserve` leaves model spacing untouched.
+from appearing as one broken sentence. The default `preserve` mode leaves model output byte-for-byte untouched. `auto` is an optional cosmetic seam repair for users who explicitly want it.
 
 ---
 
@@ -630,4 +630,87 @@ Schema 14 fixes the case where the script appeared to create a Current Played Co
 - Unknown-duration transitions such as sleep/waking mark story-time as partial, preventing false exact `20 minutes ago` claims after untracked time has passed.
 
 The scenario used to expose these failures is not encoded into the engine; the fixes are generic.
+
+
+
+## Schema 15 — Phoenix / Mobile Compatibility
+
+Schema 15 hardens EIDETIC against current AI Dungeon Phoenix behavior, especially the
+failure reports seen on Android/mobile browsers.
+
+### Slash commands no longer intentionally trigger script errors
+
+AI Dungeon currently shows `Unable to run scenario scripts` when an Input hook returns an
+empty string or `stop: true`. Older EIDETIC command handling used the traditional
+stop-the-turn approach, which therefore produced a red error even when the command logic
+itself had run.
+
+Schema 15 uses **soft commands** instead:
+
+1. Input records the command and returns a non-empty safe marker with `stop: false`.
+2. Context is reduced to a tiny utility instruction.
+3. The model performs one minimal utility generation.
+4. Output intercepts that generation and replaces it with the command result.
+5. Command artifacts are removed from later story context and are never stored as story memories.
+
+This is deliberately a one-small-call compromise: Phoenix does not currently provide a
+clean error-free "update state but skip generation" Input return path.
+
+### Phoenix Story Card persistence
+
+EIDETIC uses the supported Story Card fields (`keys`, `entry`, `type`) and the official
+`addStoryCard` / `updateStoryCard` helpers.
+
+Card writes are verified on a later hook. If the platform/card backend does not preserve a
+write, EIDETIC enters a backoff state instead of repeatedly hammering the Story Card API.
+The memory engine **continues to work through persistent state + Front Memory even when
+Story Card persistence is degraded**.
+
+The Current Played Continuity card is a visible dashboard, not the only source of live
+memory. Character-card managed Entry blocks are intentionally small (normally two direct
+current facts) so triggered cards are not bloated.
+
+### Context-budget protection
+
+AI Dungeon does not allocate the entire model context as one undifferentiated bucket.
+Required components and dynamic components have separate priorities/allocations, and
+matching Story Cards receive only part of the dynamic remainder. Because of that, a
+Context Warning can legitimately appear even when the total number displayed is below the
+model's maximum.
+
+Schema 15 reduces EIDETIC's contribution:
+
+- routine recall is compact and adaptive;
+- Front Memory is used once instead of duplicating recall into the Context modifier;
+- routine recall reserves context headroom;
+- large Memory usage forces a smaller EIDETIC block;
+- only explicit recall questions receive a temporary larger budget when needed to return
+  an actual remembered fact;
+- character Story Card managed blocks are capped and trimmed.
+
+EIDETIC cannot suppress a platform Context Warning caused by the Scenario's own AI
+Instructions, Plot Essentials, Story Cards, Memory Bank, or history. It prevents EIDETIC
+from unnecessarily causing one.
+
+### Red triangle / ordinary Output
+
+AI Dungeon's red warning triangle is the **Context Warning** indicator for omitted Plot
+Components. It is not evidence that EIDETIC's Output hook failed.
+
+Ordinary model output now defaults to `outputSpacing = preserve`, so EIDETIC returns it
+byte-for-byte unless it has to remove an accidentally leaked EIDETIC control block.
+`outputSpacing = auto` remains an explicit opt-in cosmetic edit.
+
+### Cache-compatible Context
+
+The Context tab remains `// @cache-compatible`, but Schema 15 normally leaves the supplied
+context text unchanged and stores recall in `state.memory.frontMemory`. This avoids
+disturbing the stable prompt prefix while still putting EIDETIC recall at the end of the
+model context.
+
+### Mobile verification
+
+The mobile/Phoenix harness tests every public slash command, both thrown and false-return
+Story Card failures, normal Output pass-through, Front Memory recall under a constrained
+context budget, command-artifact cleanup, and successful Current Played Continuity writes.
 
