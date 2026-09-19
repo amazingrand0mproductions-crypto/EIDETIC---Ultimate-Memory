@@ -80,19 +80,23 @@ const EIDETIC_CONFIG = {
 
   DEBUG: false,
 
-  // Durable live-continuity sync. Existing Story Card Entry text is never rewritten.
-  SYNC_STORY_CARD_NOTES: true,
+  // Durable live-continuity sync. Managed blocks are appended to Story Card Entry text.
+  // Notes are not used as AI context by AI Dungeon's scripting API.
+  SYNC_STORY_CARD_NOTES: true, // legacy compatibility name; now means managed Entry sync
+  SYNC_STORY_CARD_ENTRIES: true,
   AUTO_CURRENT_CONTINUITY_CARD: true,
   CURRENT_CONTINUITY_KEY: "%__EIDETIC_CURRENT_7D4B__%",
   LIVE_FACT_LIMIT: 180,
   LIVE_FACT_CHARS: 260,
-  CARD_NOTE_FACTS: 8,
+  CARD_NOTE_FACTS: 6,
+  CURRENT_CARD_FACTS: 14,
+  LIVE_RECALL_FACTS: 5,
 };
 
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 13;
+  const SCHEMA_REVISION = 14;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -18062,16 +18066,16 @@ const EIDETIC = (() => {
       anchors: [],
       ledger: [],
       liveFacts: [],
-      world: { entities: {}, candidates: {}, facts: [], timeline: [], clock: { hours: 0, baseEpochHours: null, currentDateLabel: "", currentTimeLabel: "", knownElapsed: false } },
+      world: { entities: {}, candidates: {}, facts: [], timeline: [], clock: { hours: 0, baseEpochHours: null, currentDateLabel: "", currentTimeLabel: "", knownElapsed: false, partial: false } },
       chars: {},
       candidates: {},
       scene: {},
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, identityRepairDone: false },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
-      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, liveCardWrites: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0 },
+      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
     };
   }
@@ -18082,17 +18086,18 @@ const EIDETIC = (() => {
     if (!Array.isArray(r.cold)) r.cold = [];
     if (!Array.isArray(r.anchors)) r.anchors = [];
     if (!Array.isArray(r.ledger)) r.ledger = [];
-    if (!r.world || typeof r.world !== "object") r.world = { entities:{}, facts:[], timeline:[], clock:{ hours:0, baseEpochHours:null, currentDateLabel:"", currentTimeLabel:"", knownElapsed:false } };
+    if (!r.world || typeof r.world !== "object") r.world = { entities:{}, facts:[], timeline:[], clock:{ hours:0, baseEpochHours:null, currentDateLabel:"", currentTimeLabel:"", knownElapsed:false, partial:false } };
     if (!r.world.entities || typeof r.world.entities !== "object") r.world.entities = {};
     if (!r.world.candidates || typeof r.world.candidates !== "object") r.world.candidates = {};
     if (!Array.isArray(r.world.facts)) r.world.facts = [];
     if (!Array.isArray(r.world.timeline)) r.world.timeline = [];
-    if (!r.world.clock || typeof r.world.clock !== "object") r.world.clock = { hours:0, baseEpochHours:null, currentDateLabel:"", currentTimeLabel:"", knownElapsed:false };
+    if (!r.world.clock || typeof r.world.clock !== "object") r.world.clock = { hours:0, baseEpochHours:null, currentDateLabel:"", currentTimeLabel:"", knownElapsed:false, partial:false };
     if (!Number.isFinite(r.world.clock.hours)) r.world.clock.hours = 0;
     if (!(Number.isFinite(r.world.clock.baseEpochHours) || r.world.clock.baseEpochHours === null)) r.world.clock.baseEpochHours = null;
     if (typeof r.world.clock.currentDateLabel !== "string") r.world.clock.currentDateLabel = "";
     if (typeof r.world.clock.currentTimeLabel !== "string") r.world.clock.currentTimeLabel = "";
     if (typeof r.world.clock.knownElapsed !== "boolean") r.world.clock.knownElapsed = false;
+    if (typeof r.world.clock.partial !== "boolean") r.world.clock.partial = false;
     if (!r.chars || typeof r.chars !== "object") r.chars = {};
     if (!r.candidates || typeof r.candidates !== "object") r.candidates = {};
     if (!r.scene || typeof r.scene !== "object") r.scene = {};
@@ -18117,6 +18122,7 @@ const EIDETIC = (() => {
     if (!Array.isArray(r.runtime.lastWorldEntities)) r.runtime.lastWorldEntities = [];
     if (!(typeof r.runtime.liveCardId === "number" || typeof r.runtime.liveCardId === "string")) r.runtime.liveCardId = "";
     if (!Number.isFinite(r.runtime.liveSyncTurn)) r.runtime.liveSyncTurn = -1;
+    if (typeof r.runtime.liveSyncSig !== "string") r.runtime.liveSyncSig = "";
     if (typeof r.runtime.identityRepairDone !== "boolean") r.runtime.identityRepairDone = false;
     if (!Array.isArray(r.liveFacts)) r.liveFacts = [];
     if (!r.stats || typeof r.stats !== "object") r.stats = {};
@@ -18878,7 +18884,7 @@ const EIDETIC = (() => {
       "outputSpacing = " + v.outputSpacing,
       "debug = " + v.debug,
       "",
-      "See Notes for a simple explanation of every option."
+      "A simple explanation of every option is included below the settings."
     ].join("\n");
   }
 
@@ -19071,18 +19077,14 @@ const EIDETIC = (() => {
     }
     const panel = configCardEntry(values);
     const guide = configCardNotes();
+    const fullEntry = panel + "\n\n" + guide;
 
-    c.type = "Custom";
     try { c.title = "🧠 EIDETIC — Config & Guide"; } catch (_) {}
-    c.keys = EIDETIC_CONFIG.CONFIG_CARD_KEY;
+    // AI Dungeon's supported scripting fields are keys/entry/type. Persist through the
+    // official helper when available instead of relying on direct object mutation.
+    persistStoryCard(idx, EIDETIC_CONFIG.CONFIG_CARD_KEY, fullEntry, "Custom");
 
-    // Entry is always the editable source of truth.
-    c.entry = panel;
-    if ("value" in c) {
-      try { c.value = panel; } catch (_) {}
-    }
-
-    // Notes are explanation-only when the runtime supports metadata fields.
+    // Notes/description are best-effort mirrors only; Entry contains the complete guide.
     const notesPersist = tryWriteConfigNotes(c, guide);
     if (r && r.runtime) {
       r.runtime.configCardMode = notesPersist ? "entry+notes" : "entry";
@@ -19160,11 +19162,47 @@ const EIDETIC = (() => {
 
   const EIDETIC_NOTES_OPEN = "[[EIDETIC LIVE CONTINUITY]]";
   const EIDETIC_NOTES_CLOSE = "[[/EIDETIC LIVE CONTINUITY]]";
+  const EIDETIC_ENTRY_OPEN = "[[EIDETIC LIVE CONTINUITY]]";
+  const EIDETIC_ENTRY_CLOSE = "[[/EIDETIC LIVE CONTINUITY]]";
+  const EIDETIC_CURRENT_OPEN = "[[EIDETIC CURRENT PLAYED CONTINUITY]]";
+  const EIDETIC_CURRENT_CLOSE = "[[/EIDETIC CURRENT PLAYED CONTINUITY]]";
 
   function stripEideticNotes(text) {
     text=safeText(text); const a=text.indexOf(EIDETIC_NOTES_OPEN), b=text.indexOf(EIDETIC_NOTES_CLOSE);
     if(a<0||b<a)return text.trim();
     return (text.slice(0,a)+text.slice(b+EIDETIC_NOTES_CLOSE.length)).replace(/\n{3,}/g,"\n\n").trim();
+  }
+
+  function stripManagedEntryBlock(text, open, close) {
+    text=safeText(text);
+    const a=text.indexOf(open), b=text.indexOf(close);
+    if(a<0||b<a)return text.trim();
+    return (text.slice(0,a)+text.slice(b+close.length)).replace(/\n{3,}/g,"\n\n").trim();
+  }
+
+  function persistStoryCard(index, keys, entry, type) {
+    if (typeof storyCards==="undefined" || !Array.isArray(storyCards) || index<0 || !storyCards[index]) return false;
+    let ok=false;
+    if (typeof updateStoryCard==="function") {
+      try { updateStoryCard(index, keys, entry, type); ok=true; } catch (_) {}
+    }
+    // Keep this hook's local storyCards view coherent as well. AI Dungeon's official
+    // updateStoryCard helper is the persistence path; direct assignment is fallback/test support.
+    try {
+      storyCards[index].keys=keys;
+      storyCards[index].entry=entry;
+      storyCards[index].type=type;
+      if ("value" in storyCards[index]) storyCards[index].value=entry;
+      ok=true;
+    } catch (_) {}
+    return ok;
+  }
+
+  function stableStoryCardEntry(card) {
+    let text=safeText(card && (card.entry!=null?card.entry:card.value));
+    text=stripManagedEntryBlock(text,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
+    text=stripManagedEntryBlock(text,EIDETIC_CURRENT_OPEN,EIDETIC_CURRENT_CLOSE);
+    return cleanText(text);
   }
   function evidenceState(text, mode) {
     const t=cleanText(text);
@@ -19179,7 +19217,7 @@ const EIDETIC = (() => {
   function liveFactEligible(text, mode, imp) {
     const t=cleanText(text); if(!t||mode==="question"||t.length<12)return false;
     if(/^(?:okay|right|yes|no|yeah|yeh|thanks|thank you|hello|hi|bye|goodnight|night)\b[.!?]*$/i.test(t))return false;
-    if(mode==="event"||mode==="player-event") return imp>=3 || /\b(?:arriv(?:e|es|ed)|leav(?:e|es|ing)|return(?:s|ed)?|discover(?:s|ed)?|find(?:s|ing)?|found|attack(?:s|ed)?|injur(?:e|es|ed)|destroy(?:s|ed)?|die(?:s|d)?|dead|alive|missing|move(?:s|d)?|stay(?:s|ed)?|learn(?:s|ed)?|tell(?:s|ing)?|told|reveal(?:s|ed)?|measure(?:s|d)?|match(?:es|ed)?|orbit(?:s|ing)?|pod|vision|anomaly|relationship|partner|married|dating|pregnant|birthday|years? old)\b/i.test(t);
+    if(mode==="event"||mode==="player-event") return imp>=3 || /\b(?:arriv(?:e|es|ed)|leav(?:e|es|ing)|return(?:s|ed)?|discover(?:s|ed)?|find(?:s|ing)?|found|attack(?:s|ed)?|injur(?:e|es|ed)|destroy(?:s|ed)?|die(?:s|d)?|dead|alive|missing|move(?:s|d)?|stay(?:s|ed)?|learn(?:s|ed)?|tell(?:s|ing)?|told|reveal(?:s|ed)?|measure(?:s|d)?|match(?:es|ed)?|orbit(?:s|ing)?|pod|vision|anomaly|relationship|partner|married|dating|pregnant|birthday|years? old|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|depart(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translate(?:s|d)?|translation|reply|response|crew|mission|route)\b/i.test(t);
     return mode==="claim"||mode==="belief"||mode==="uncertain";
   }
   function addLiveFact(text, owners, turn, kind, mode, imp, src) {
@@ -19202,7 +19240,7 @@ const EIDETIC = (() => {
     const forms=[ch.name].concat(ch.aliases||[]).map(normName).filter(Boolean);
     for(let i=0;i<storyCards.length;i++){
       const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase(); if(!/character|npc|person|people|cast/.test(type))continue;
-      const id=normName(storyCardIdentityName(cleanText(c.entry!=null?c.entry:c.value))), title=normName(c.title), keys=splitKeys(c.keys).map(normName);
+      const id=normName(storyCardIdentityName(stableStoryCardEntry(c))), title=normName(c.title), keys=splitKeys(c.keys).map(normName);
       if(forms.some(f=>f===id||f===title||keys.indexOf(f)>=0))return i;
     }
     return -1;
@@ -19217,31 +19255,86 @@ const EIDETIC = (() => {
   }
   function liveFactLine(f){ return "T"+f.turn+" ["+f.status+"] "+displayText(f.text,EIDETIC_CONFIG.LIVE_FACT_CHARS); }
   function writeCharacterLiveNotes(charKey) {
-    if(!EIDETIC_CONFIG.SYNC_STORY_CARD_NOTES)return false; const idx=findStoryCardForCharacter(charKey); if(idx<0)return false;
+    if(!(EIDETIC_CONFIG.SYNC_STORY_CARD_ENTRIES || EIDETIC_CONFIG.SYNC_STORY_CARD_NOTES))return false;
+    const idx=findStoryCardForCharacter(charKey); if(idx<0)return false;
     const facts=liveFactsForCharacter(charKey,EIDETIC_CONFIG.CARD_NOTE_FACTS); if(!facts.length)return false;
-    const c=storyCards[idx], base=stripEideticNotes(c.notes), block=EIDETIC_NOTES_OPEN+"\nCurrent played continuity — newest played events override stale setup text. Evidence labels matter; CLAIM/INFERENCE/UNCONFIRMED are not facts.\n"+facts.map(liveFactLine).join("\n")+"\n"+EIDETIC_NOTES_CLOSE;
-    const next=(base?base+"\n\n":"")+block; if(safeText(c.notes)===next)return false;
-    try{c.notes=next;}catch(_){return false;} root().stats.cardNoteWrites=Number(root().stats.cardNoteWrites||0)+1; return true;
+    const c=storyCards[idx];
+    const original=safeText(c.entry!=null?c.entry:c.value);
+    const base=stripManagedEntryBlock(original,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
+    const block=EIDETIC_ENTRY_OPEN+"\n"+
+      "PRIVATE CONTINUITY FOR THIS CHARACTER. Do not grant these memories to another character merely because this Story Card is visible. Newer played events override stale setup text. "+
+      "FACT is observed/played; CLAIM, BELIEF, INFERENCE and UNCONFIRMED are not objective fact.\n"+
+      facts.map(liveFactLine).join("\n")+"\n"+EIDETIC_ENTRY_CLOSE;
+    const next=(base?base+"\n\n":"")+block;
+    if(original===next)return false;
+    if(!persistStoryCard(idx,safeText(c.keys),next,safeText(c.type)||"Character"))return false;
+    const r=root();
+    r.stats.cardEntryWrites=Number(r.stats.cardEntryWrites||0)+1;
+    // Keep the legacy counter so old /live expectations and saved diagnostics remain meaningful.
+    r.stats.cardNoteWrites=Number(r.stats.cardNoteWrites||0)+1;
+    return true;
   }
+
   function findCurrentContinuityCardIndex(){
     if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return -1; const r=root(), id=r&&r.runtime?r.runtime.liveCardId:"";
     if(id!==""&&id!=null)for(let i=0;i<storyCards.length;i++)if(storyCards[i]&&String(storyCards[i].id)===String(id))return i;
     for(let i=0;i<storyCards.length;i++){const c=storyCards[i]||{}, keys=splitKeys(c.keys);if(keys.indexOf(EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY)>=0||safeText(c.title)==="🧠 EIDETIC — Current Played Continuity")return i;} return -1;
   }
+  function currentContinuityCardEntry(facts) {
+    const lines=(facts||[]).map(liveFactLine);
+    return "EIDETIC — CURRENT PLAYED CONTINUITY\n"+
+      "Generated from live play. Newer played events supersede stale setup/history. "+
+      "FACT is observed/played; CLAIM, BELIEF, INFERENCE and UNCONFIRMED must not be silently promoted.\n"+
+      EIDETIC_CURRENT_OPEN+"\n"+
+      (lines.length?lines.join("\n"):"No durable played facts captured yet.")+"\n"+
+      EIDETIC_CURRENT_CLOSE;
+  }
+
   function ensureCurrentContinuityCard(){
-    if(!EIDETIC_CONFIG.AUTO_CURRENT_CONTINUITY_CARD||typeof storyCards==="undefined"||!Array.isArray(storyCards))return null; let idx=findCurrentContinuityCardIndex();
-    if(idx<0&&typeof addStoryCard==="function")try{const made=addStoryCard(EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY,"EIDETIC-managed current played continuity. Do not edit the generated Notes block.","Custom");if(Number.isInteger(made))idx=made;if(idx<0)idx=findCurrentContinuityCardIndex();}catch(_){}
-    if(idx<0||!storyCards[idx])return null; const c=storyCards[idx],r=root(); if(c.id!=null)r.runtime.liveCardId=c.id; c.type="Custom"; try{c.title="🧠 EIDETIC — Current Played Continuity";}catch(_){} c.keys=EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY; return c;
+    if(!EIDETIC_CONFIG.AUTO_CURRENT_CONTINUITY_CARD||typeof storyCards==="undefined"||!Array.isArray(storyCards))return null;
+    let idx=findCurrentContinuityCardIndex();
+    if(idx<0&&typeof addStoryCard==="function"){
+      try{
+        const made=addStoryCard(EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY,currentContinuityCardEntry([]),"Custom");
+        if(Number.isInteger(made))idx=made;
+        if(idx<0)idx=findCurrentContinuityCardIndex();
+      }catch(_){}
+    }
+    if(idx<0||!storyCards[idx])return null;
+    const c=storyCards[idx],r=root();
+    if(c.id!=null)r.runtime.liveCardId=c.id;
+    // title is best-effort metadata only; keys/entry/type are the supported scripting fields.
+    try{c.title="🧠 EIDETIC — Current Played Continuity";}catch(_){}
+    return {card:c,index:idx};
   }
+
   function syncCurrentContinuityCard(){
-    const r=root(),c=ensureCurrentContinuityCard(); if(!r||!c)return false; const facts=(r.liveFacts||[]).slice(-24); const lines=facts.map(liveFactLine);
-    const base=stripEideticNotes(c.notes), block=EIDETIC_NOTES_OPEN+"\nLIVE PLAYED CANON. Newer played events supersede stale setup/history. FACT is observed/played; CLAIM, BELIEF, INFERENCE and UNCONFIRMED must never be silently promoted.\n"+(lines.length?lines.join("\n"):"No durable played facts captured yet.")+"\n"+EIDETIC_NOTES_CLOSE;
-    const next=(base?base+"\n\n":"")+block; if(safeText(c.notes)===next)return false; try{c.notes=next;}catch(_){return false;} r.stats.liveCardWrites=Number(r.stats.liveCardWrites||0)+1; return true;
+    const r=root(),found=ensureCurrentContinuityCard(); if(!r||!found)return false;
+    const c=found.card, idx=found.index;
+    const facts=(r.liveFacts||[]).slice(-EIDETIC_CONFIG.CURRENT_CARD_FACTS);
+    const next=currentContinuityCardEntry(facts);
+    const old=safeText(c.entry!=null?c.entry:c.value);
+    if(old===next && safeText(c.keys)===EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY && safeText(c.type)==="Custom")return false;
+    if(!persistStoryCard(idx,EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY,next,"Custom"))return false;
+    r.stats.liveCardWrites=Number(r.stats.liveCardWrites||0)+1;
+    return true;
   }
+
   function syncLiveStoryCards(force){
-    const r=root(); if(!r||typeof storyCards==="undefined"||!Array.isArray(storyCards))return; const t=currentTurn(); if(!force&&r.runtime.liveSyncTurn===t)return;
-    const touched=new Set(); for(let i=Math.max(0,r.liveFacts.length-30);i<r.liveFacts.length;i++){const f=r.liveFacts[i]||{};(f.names||[]).forEach(k=>touched.add(k));}
-    touched.forEach(k=>writeCharacterLiveNotes(k)); syncCurrentContinuityCard(); r.runtime.liveSyncTurn=t;
+    const r=root(); if(!r||typeof storyCards==="undefined"||!Array.isArray(storyCards))return;
+    const t=currentTurn(), lf=r.liveFacts||[];
+    const last=lf.length?lf[lf.length-1]:null;
+    const sig=lf.length+"|"+(last?(last.fp||last.id||""):"")+"|"+(last?Number(last.turn||0):0);
+    if(!force && r.runtime.liveSyncSig===sig)return;
+    const touched=new Set();
+    for(let i=Math.max(0,lf.length-18);i<lf.length;i++){
+      const f=lf[i]||{};
+      if(Number(f.turn||0)<t-2)continue;
+      (f.names||[]).forEach(k=>touched.add(k));
+    }
+    touched.forEach(k=>writeCharacterLiveNotes(k));
+    syncCurrentContinuityCard();
+    r.runtime.liveSyncTurn=t; r.runtime.liveSyncSig=sig;
   }
 
   function seedFromStoryCards() {
@@ -19252,7 +19345,7 @@ const EIDETIC = (() => {
       const c = storyCards[i] || {};
       const type = safeText(c.type).toLowerCase();
       if (!/character|npc|person|people|cast/.test(type)) continue;
-      const entryForSig = cleanText(c.entry != null ? c.entry : c.value);
+      const entryForSig = stableStoryCardEntry(c);
       sigParts.push(safeText(c.id) + "|" + type + "|" + safeText(c.title) + "|" + safeText(c.keys) + "|" + entryForSig);
     }
     const sig = hash(sigParts.join("\u001e"));
@@ -19260,7 +19353,7 @@ const EIDETIC = (() => {
     for (let i = 0; i < storyCards.length; i++) {
       const c = storyCards[i] || {};
       const type = safeText(c.type).toLowerCase();
-      const entry = cleanText(c.entry != null ? c.entry : c.value);
+      const entry = stableStoryCardEntry(c);
       const rawKeys = splitKeys(c.keys).map(x => safeText(x).trim()).filter(Boolean);
       const characterish = /character|npc|person|people|cast/.test(type);
       if (!characterish) continue;
@@ -19950,11 +20043,11 @@ const EIDETIC = (() => {
   function seedWorldEntitiesFromStoryCards() {
     if (!EIDETIC_CONFIG.ENABLE_WORLD_MEMORY || typeof storyCards==="undefined" || !Array.isArray(storyCards)) return;
     const r=root(), parts=[];
-    for (let i=0;i<storyCards.length;i++) { const c=storyCards[i]||{}, t=worldTypeFromCard(c.type); if (!t) continue; parts.push(safeText(c.id)+"|"+safeText(c.type)+"|"+safeText(c.title)+"|"+safeText(c.keys)+"|"+cleanText(c.entry!=null?c.entry:c.value)); }
+    for (let i=0;i<storyCards.length;i++) { const c=storyCards[i]||{}, t=worldTypeFromCard(c.type); if (!t) continue; parts.push(safeText(c.id)+"|"+safeText(c.type)+"|"+safeText(c.title)+"|"+safeText(c.keys)+"|"+stableStoryCardEntry(c)); }
     const sig=hash(parts.join("\u001e")); if (r.runtime.worldCardSig===sig) return;
     for (let i=0;i<storyCards.length;i++) {
       const c=storyCards[i]||{}, type=worldTypeFromCard(c.type); if (!type) continue;
-      const keys=splitKeys(c.keys).map(x=>cleanText(x)).filter(Boolean), entry=cleanText(c.entry!=null?c.entry:c.value), title=cleanText(c.title);
+      const keys=splitKeys(c.keys).map(x=>cleanText(x)).filter(Boolean), entry=stableStoryCardEntry(c), title=cleanText(c.title);
       let name=title;
       if (!name || /eidetic/i.test(name)) name=keys[0]||"";
       if (type==="character") {
@@ -20104,13 +20197,19 @@ const EIDETIC = (() => {
     if(hours>=year*0.8)return fmt(hours/year,"year"); if(hours>=month*0.8)return fmt(hours/month,"month"); if(hours>=week*0.8)return fmt(hours/week,"week"); if(hours>=day*0.8)return fmt(hours/day,"day"); if(hours>=1)return fmt(hours,"hour"); return fmt(Math.max(1,hours*60),"minute");
   }
   function recomputeWorldClock() {
-    const w=worldRoot(); if(!w)return; let hours=0,base=null,label="",timeLabel="",known=false;
-    for(let i=0;i<w.timeline.length;i++){ const e=w.timeline[i]||{}; if(e.category==="time-gap"&&Number.isFinite(e.deltaHours)){hours+=e.deltaHours;known=true;} if(e.category==="current-date"&&Number.isFinite(e.epochHours)){base=e.epochHours-hours;label=e.dateLabel||label;} if(e.category==="time-marker"&&e.timeLabel)timeLabel=e.timeLabel; }
-    w.clock.hours=hours; w.clock.baseEpochHours=base; w.clock.currentDateLabel=label; w.clock.currentTimeLabel=timeLabel; w.clock.knownElapsed=known||base!==null;
+    const w=worldRoot(); if(!w)return; let hours=0,base=null,label="",timeLabel="",known=false,partial=false;
+    for(let i=0;i<w.timeline.length;i++){
+      const e=w.timeline[i]||{};
+      if(e.category==="time-gap"&&Number.isFinite(e.deltaHours)){hours+=e.deltaHours;known=true;}
+      if(e.category==="time-uncertain")partial=true;
+      if(e.category==="current-date"&&Number.isFinite(e.epochHours)){base=e.epochHours-hours;label=e.dateLabel||label;}
+      if(e.category==="time-marker"&&e.timeLabel)timeLabel=e.timeLabel;
+    }
+    w.clock.hours=hours; w.clock.baseEpochHours=base; w.clock.currentDateLabel=label; w.clock.currentTimeLabel=timeLabel; w.clock.knownElapsed=known||base!==null; w.clock.partial=partial;
   }
   function currentStoryHours(){ const w=worldRoot(); return w&&w.clock?Number(w.clock.hours)||0:0; }
   function currentStoryDateLabel(){ const w=worldRoot(); if(!w||!w.clock)return""; if(Number.isFinite(w.clock.baseEpochHours)){ const ms=(w.clock.baseEpochHours+currentStoryHours())*3600000; const d=new Date(ms); if(!isNaN(d.getTime()))return d.toISOString().slice(0,10); } return w.clock.currentDateLabel||""; }
-  function relativeAgeLabel(eventHours) { const w=worldRoot(); if(!w||!w.clock||!w.clock.knownElapsed)return""; const diff=currentStoryHours()-Number(eventHours||0); if(diff<=0.01)return"now"; return formatDurationHours(diff)+" ago"; }
+  function relativeAgeLabel(eventHours) { const w=worldRoot(); if(!w||!w.clock||!w.clock.knownElapsed)return""; const diff=currentStoryHours()-Number(eventHours||0); if(diff<=0.01)return"now"; if(w.clock.partial)return"earlier"; return formatDurationHours(diff)+" ago"; }
   function addTimelineRecord(text,entities,owners,turn,kind,src,mode,category,storyHours,extra) {
     const w=worldRoot(); if(!w)return null; const fp=hash(category+"|"+cleanText(text).toLowerCase()+"|"+Number(storyHours||0).toFixed(3));
     for(let i=w.timeline.length-1,scan=0;i>=0&&scan<120;i--,scan++){const e=w.timeline[i];if(e&&e.fp===fp&&e.src===src)return e;}
@@ -20262,6 +20361,10 @@ const EIDETIC = (() => {
   function applyTemporalMarkers(text,owners,turn,kind,src) {
     if(!EIDETIC_CONFIG.TRACK_STORY_TIME)return; const w=worldRoot(); if(!w)return;
     const gap=parseForwardGapHours(text); if(gap>0){ w.clock.hours+=gap; w.clock.knownElapsed=true; addTimelineRecord(text,[],owners,turn,kind,src,"event","time-gap",w.clock.hours,{deltaHours:gap}); root().stats.timeJumps=Number(root().stats.timeJumps||0)+1; }
+    else if(/\b(?:go(?:es|ing)? to bed|went to bed|sleep(?:s|ing|t)?|falls? asleep|fell asleep|wake(?:s|n|ning)?|woke|when (?:you|i|we|they|he|she) wake|after a while|some time later|later that (?:day|night|morning|afternoon|evening))\b/i.test(text)){
+      w.clock.partial=true;
+      addTimelineRecord(text,[],owners,turn,kind,src,"event","time-uncertain",w.clock.hours,{uncertain:true});
+    }
     const date=parseAbsoluteDate(text); if(date){ const currentMarker=/\b(?:today is|it is|current date is|the date is|now it is|as of)\b/i.test(text)||cleanText(text).length<40; if(currentMarker){ w.clock.baseEpochHours=date.epochHours-w.clock.hours; w.clock.currentDateLabel=date.label; w.clock.knownElapsed=true; addTimelineRecord(text,[],owners,turn,kind,src,"event","current-date",w.clock.hours,{epochHours:date.epochHours,dateLabel:date.label}); } }
     let tm=safeText(text).match(/\b(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?))\b/i); if(!tm)tm=safeText(text).match(/\b(?:early\s+|late\s+)?(morning|afternoon|evening|night|midnight|noon)\b/i);
     if(tm && /\b(?:now|today|tonight|this|it is|it's|currently|current time|at\s+\d|morning|afternoon|evening|night|midnight|noon)\b/i.test(text)){ w.clock.currentTimeLabel=tm[1]; addTimelineRecord(text,[],owners,turn,kind,src,"event","time-marker",w.clock.hours,{timeLabel:tm[1]}); }
@@ -20323,7 +20426,7 @@ const EIDETIC = (() => {
       return s;
     };
     const facts=[],seen=new Set(); for(let i=w.facts.length-1;i>=0;i--){const e=w.facts[i];if(!e)continue;const k=e.entity+"|"+e.slot;if(seen.has(k))continue;seen.add(k);const sc=score(e,false);if(sc>=2)facts.push({e,sc});}
-    const events=[]; for(let i=w.timeline.length-1;i>=0;i--){const e=w.timeline[i];if(!e||e.category==="time-gap"||e.category==="current-date")continue;const sc=score(e,true);if(sc>=2)events.push({e,sc});}
+    const events=[]; for(let i=w.timeline.length-1;i>=0;i--){const e=w.timeline[i];if(!e||e.category==="time-gap"||e.category==="current-date"||e.category==="time-uncertain")continue;const sc=score(e,true);if(sc>=2)events.push({e,sc});}
     facts.sort((a,b)=>b.sc-a.sc||b.e.turn-a.e.turn);events.sort((a,b)=>b.sc-a.sc||b.e.turn-a.e.turn);
     return{facts:facts.slice(0,limitFacts||EIDETIC_CONFIG.WORLD_FACTS_PER_RECALL).map(x=>x.e),events:events.slice(0,limitEvents||EIDETIC_CONFIG.WORLD_EVENTS_PER_RECALL).map(x=>x.e)};
   }
@@ -20342,7 +20445,7 @@ const EIDETIC = (() => {
     lines.push("SCENARIO / WORLD CONTINUITY (only continuity available to every active character in this scene, or narrator/player history when no NPC is active):");
     if(w.clock.knownElapsed&&(tagsContain(plan,"@time")||/\b(?:ago|when|date|year|month|week|day|time)\b/i.test(query))) {
       const d=currentStoryDateLabel(), elapsed=Math.max(0,currentStoryHours()), pieces=[];
-      if(d)pieces.push("current tracked date "+d); if(w.clock.currentTimeLabel)pieces.push("time "+w.clock.currentTimeLabel); if(elapsed>0.01)pieces.push(formatDurationHours(elapsed)+" elapsed from the tracked story-time origin");
+      if(d)pieces.push("current tracked date "+d); if(w.clock.currentTimeLabel)pieces.push("time "+w.clock.currentTimeLabel); if(elapsed>0.01)pieces.push((w.clock.partial?"at least ":"")+formatDurationHours(elapsed)+" explicitly elapsed from the tracked story-time origin"+(w.clock.partial?"; additional unquantified time passed":""));
       if(pieces.length)lines.push("• STORY TIME: "+pieces.join("; ")+".");
     }
     for(let i=0;i<got.facts.length;i++){const f=got.facts[i], ent=w.entities[f.entity], age=relativeAgeLabel(f.storyHours); lines.push("• CURRENT "+(ent?ent.type.toUpperCase():"WORLD")+" — "+(ent?ent.name:f.entity)+" / "+safeText(f.slot).toUpperCase()+": "+displayText(f.text,245)+(age&&age!=="now"?" [established "+age+"]":""));}
@@ -20537,6 +20640,12 @@ const EIDETIC = (() => {
       if (et < turn) break;
       if (e && !e.manual && et === turn && e.kind === kind) { r.ledger.splice(i, 1); removed++; }
     }
+    for (let i = (r.liveFacts||[]).length - 1; i >= 0; i--) {
+      const e=r.liveFacts[i], et=Number(e&&e.turn)||0;
+      if(et<turn)break;
+      if(e&&et===turn&&e.kind===kind){r.liveFacts.splice(i,1);removed++;}
+    }
+    if(r.runtime)r.runtime.liveSyncSig="";
     if (r.world) {
       for (let i=r.world.facts.length-1;i>=0;i--) { const e=r.world.facts[i], et=Number(e&&e.turn)||0; if(et<turn)break; if(e&&!e.manual&&et===turn&&e.kind===kind){r.world.facts.splice(i,1);removed++;} }
       for (let i=r.world.timeline.length-1;i>=0;i--) { const e=r.world.timeline[i], et=Number(e&&e.turn)||0; if(et<turn)break; if(e&&!e.manual&&et===turn&&e.kind===kind){r.world.timeline.splice(i,1);removed++;} }
@@ -20579,6 +20688,7 @@ const EIDETIC = (() => {
     const r = root();
     if (!r) return;
     const turn = currentTurn();
+    const liveBefore=(r.liveFacts||[]).length+"|"+((r.liveFacts||[]).length?((r.liveFacts[r.liveFacts.length-1].fp)||""):"");
     rollbackFuture(turn);
     const cleaned = cleanText(text);
     if (!cleaned) return;
@@ -20653,7 +20763,8 @@ const EIDETIC = (() => {
     r.last.turn = turn;
     if (kind === "input") { r.last.inputHash = srcHash; r.last.inputTurn = turn; }
     if (kind === "output") { r.last.outputHash = srcHash; r.last.outputTurn = turn; }
-    if (INGEST_ORIGIN !== "bootstrap") syncLiveStoryCards(true);
+    const liveAfter=(r.liveFacts||[]).length+"|"+((r.liveFacts||[]).length?((r.liveFacts[r.liveFacts.length-1].fp)||""):"");
+    if (INGEST_ORIGIN !== "bootstrap" && liveAfter!==liveBefore) syncLiveStoryCards(true);
   }
 
   function eventOwnerAllows(e, charKey) {
@@ -21057,7 +21168,11 @@ const EIDETIC = (() => {
     const focus = cleanText(extraText || "");
     if (focus) {
       const directQuestion = /\?\s*$/.test(focus) || /^(?:who|what|when|where|why|how|which|whose|is|are|was|were|do|does|did|can|could|would|will|should|has|have|had)\b/i.test(focus);
-      if (directQuestion || explicitRecallLanguage(focus) || focus.length >= 64 || namesMentioned(focus).length) return focus.slice(-1400);
+      const contentTokens=tokenList(focus,12);
+      const lowDirection=/^(?:continue|go on|carry on|next|wait|watch|listen|sleep|rest|eat|drink|nod|okay|ok|alright|yes|yeah|yeh|sure|do it|keep going|you (?:wait|watch|listen|sleep|rest|eat|drink|nod))[\s.!?…]*$/i.test(focus);
+      // A meaningful short action is its own query. Borrowing the previous AI paragraph
+      // here was a major source of irrelevant character/world recall.
+      if (!lowDirection || directQuestion || explicitRecallLanguage(focus) || focus.length >= 64 || namesMentioned(focus).length || contentTokens.length>=2) return focus.slice(-1400);
       const parts = [];
       if (typeof history !== "undefined" && Array.isArray(history) && history.length) {
         const h = cleanText(safeText(history[history.length - 1] && history[history.length - 1].text));
@@ -21087,6 +21202,63 @@ const EIDETIC = (() => {
     return budget;
   }
 
+
+  function relevantLiveContinuity(query, plan, limit, activeCharactersForScene) {
+    const r=root(); if(!r||!Array.isArray(r.liveFacts)||!r.liveFacts.length)return[];
+    const turn=currentTurn(), tokens=(plan&&plan.lexicalTokens)||tokenList(query,20);
+    const qnames=new Set((plan&&plan.names)||[]);
+    const candidates=[];
+    const start=Math.max(0,r.liveFacts.length-48);
+    for(let i=start;i<r.liveFacts.length;i++){
+      const f=r.liveFacts[i]; if(!f)continue;
+      if(EIDETIC_CONFIG.STRICT_KNOWLEDGE){
+        const gate=(Array.isArray(activeCharactersForScene)&&activeCharactersForScene.length?activeCharactersForScene:presentSceneCharacters());
+        if(gate.length){
+          const owners=Array.isArray(f.owners)?f.owners:[];
+          let visible=true;
+          for(let gi=0;gi<gate.length;gi++) if(owners.indexOf(gate[gi])<0){visible=false;break;}
+          if(!visible)continue;
+        }
+      }
+      const age=Math.max(0,turn-Number(f.turn||0));
+      if(age>36 && safeText(f.origin)!=="live")continue;
+      let score=0, overlaps=0;
+      const low=cleanText(f.text).toLowerCase();
+      for(let j=0;j<tokens.length;j++){
+        const tok=tokens[j]; if(tok&&low.indexOf(tok)>=0){score+=4;overlaps++;}
+      }
+      const names=f.names||[];
+      for(let j=0;j<names.length;j++)if(qnames.has(names[j]))score+=7;
+      if(age<=2)score+=8; else if(age<=5)score+=6; else if(age<=10)score+=3; else if(age<=20)score+=1;
+      if(f.status==="FACT")score+=1;
+      if(f.origin==="bootstrap")score-=1;
+      candidates.push({f,score,overlaps,age,i});
+    }
+    candidates.sort((a,b)=>b.score-a.score || b.i-a.i);
+
+    const out=[], seen=new Set();
+    // First take topical matches, then fill from very recent live continuity.
+    for(let pass=0;pass<2 && out.length<(limit||EIDETIC_CONFIG.LIVE_RECALL_FACTS);pass++){
+      for(let i=0;i<candidates.length&&out.length<(limit||EIDETIC_CONFIG.LIVE_RECALL_FACTS);i++){
+        const c=candidates[i], f=c.f;
+        if(seen.has(f.fp||f.id))continue;
+        if(pass===0){
+          if(plan&&plan.directQuestion){
+            const nameHit=(f.names||[]).some(n=>qnames.has(n));
+            if(!(c.overlaps>=2 || nameHit))continue;
+          } else if(!(c.overlaps>0 || c.score>=10))continue;
+        }
+        if(pass===1){
+          if(plan&&plan.directQuestion)continue;
+          if(c.age>8)continue;
+        }
+        seen.add(f.fp||f.id); out.push(f);
+      }
+    }
+    out.sort((a,b)=>Number(a.turn||0)-Number(b.turn||0));
+    return out;
+  }
+
   function buildRecall(extraText) {
     const r = root();
     if (!r || !EIDETIC_CONFIG.ENABLED) return "";
@@ -21098,12 +21270,19 @@ const EIDETIC = (() => {
     const budget = effectiveRecallBudget();
     const sceneSig = Object.keys(r.scene || {}).sort().map(k => k + ":" + r.scene[k]).join(",");
     const focusSig = (r.manualFocus || []).join(",");
-    const cacheKey = hash([turn, r.seq || 0, query, budget, sceneSig, focusSig, Object.keys(r.chars || {}).length, r.world ? Object.keys(r.world.entities||{}).length : 0, r.world ? (r.world.facts||[]).length : 0, r.world ? currentStoryHours() : 0].join("|"));
+    const cacheKey = hash([turn, r.seq || 0, query, budget, sceneSig, focusSig, Object.keys(r.chars || {}).length, r.world ? Object.keys(r.world.entities||{}).length : 0, r.world ? (r.world.facts||[]).length : 0, r.world ? currentStoryHours() : 0, r.liveFacts ? r.liveFacts.length : 0, r.liveFacts && r.liveFacts.length ? r.liveFacts[r.liveFacts.length-1].fp : ""].join("|"));
     if (r.runtime.recallCacheKey === cacheKey) return r.runtime.recallCacheBlock || "";
 
     const plan = makeQueryPlan(query);
     const active = activeCharacters(query, plan);
     const body = [];
+
+    const liveNow = relevantLiveContinuity(query, plan, EIDETIC_CONFIG.LIVE_RECALL_FACTS, active);
+    if (liveNow.length) {
+      body.push("CURRENT PLAYED CONTINUITY (recent live canon; newer facts override stale setup. CLAIM/BELIEF/INFERENCE/UNCONFIRMED remain uncertain):");
+      for (let li=0; li<liveNow.length; li++) body.push("• "+liveFactLine(liveNow[li]));
+      r.stats.liveRecallInjects=Number(r.stats.liveRecallInjects||0)+1;
+    }
 
     const seeds = relevantCardSeeds(active);
     if (!plan.explicitRecall) for (let i = 0; i < seeds.length; i++) body.push("ESTABLISHED — " + seeds[i].name + ": " + seeds[i].text);
@@ -21330,7 +21509,7 @@ const EIDETIC = (() => {
     if (cmd === "live") {
       syncLiveStoryCards(true);
       const lf=(r.liveFacts||[]).slice(-8);
-      setMessage("EIDETIC live continuity: "+(r.liveFacts||[]).length+" durable facts • "+Number(r.stats.cardNoteWrites||0)+" character-note writes • "+Number(r.stats.liveCardWrites||0)+" continuity-card writes"+(lf.length?" • latest: "+lf.map(liveFactLine).join(" • "):""));
+      setMessage("EIDETIC live continuity: "+(r.liveFacts||[]).length+" durable facts • "+Number(r.stats.cardEntryWrites||0)+" character-entry writes • "+Number(r.stats.liveCardWrites||0)+" continuity-card entry writes • "+Number(r.stats.liveRecallInjects||0)+" live-recall injections"+(lf.length?" • latest: "+lf.map(liveFactLine).join(" • "):""));
       return { text:null, stop:true };
     }
 
@@ -21349,11 +21528,11 @@ const EIDETIC = (() => {
     if (cmd === "world") {
       const w=r.world||{entities:{},facts:[],timeline:[],clock:{}};
       const date=currentStoryDateLabel();
-      setMessage("World memory: "+Object.keys(w.entities||{}).length+" entities • "+(w.facts||[]).length+" current/history facts • "+(w.timeline||[]).length+" timeline events"+(w.clock&&w.clock.knownElapsed?" • story time "+formatDurationHours(currentStoryHours())+" elapsed":"")+(date?" • date "+date:""));
+      setMessage("World memory: "+Object.keys(w.entities||{}).length+" entities • "+(w.facts||[]).length+" current/history facts • "+(w.timeline||[]).length+" timeline events"+(w.clock&&w.clock.knownElapsed?" • story time "+(w.clock.partial?"at least ":"")+formatDurationHours(currentStoryHours())+" explicitly elapsed"+(w.clock.partial?" + unquantified time":""):"")+(date?" • date "+date:""));
       return { text:null, stop:true };
     }
     if (cmd === "timeline") {
-      const ev=(r.world&&r.world.timeline?r.world.timeline:[]).filter(e=>e.category!=="time-gap"&&e.category!=="current-date").slice(-8);
+      const ev=(r.world&&r.world.timeline?r.world.timeline:[]).filter(e=>e.category!=="time-gap"&&e.category!=="current-date"&&e.category!=="time-uncertain").slice(-8);
       setMessage("Recent timeline: "+(ev.length?ev.map(e=>(relativeAgeLabel(e.storyHours)||("T"+e.turn))+" — "+displayText(e.text,90)).join(" • "):"no major world events stored yet"));
       return { text:null, stop:true };
     }
@@ -21565,6 +21744,8 @@ const EIDETIC = (() => {
     sceneResetEvidence: sceneResetEvidence,
     ownerSetFor: ownerSetFor,
     recOrigin: recOrigin,
+    relevantLiveContinuity: relevantLiveContinuity,
+    persistStoryCard: persistStoryCard,
   };
 
   return run;

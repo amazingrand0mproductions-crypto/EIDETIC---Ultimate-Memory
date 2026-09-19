@@ -520,15 +520,19 @@ That can make a conversation from hundreds or thousands of actions ago affect wh
 
 ### **The story moves forward. The characters keep the past.**
 
-## Live Continuity Sync (Schema 11)
+## Live Continuity Sync (Schema 14)
 
-EIDETIC now keeps a durable played-continuity layer in addition to its hot/cold recall archive. Significant played developments are classified as `FACT`, `CLAIM`, `BELIEF`, `INFERENCE`, `UNCONFIRMED`, or `NEGATED` so mystery interpretations are not silently promoted into canon.
+EIDETIC keeps a durable played-continuity layer in addition to its hot/cold recall archive. Significant played developments are classified as `FACT`, `CLAIM`, `BELIEF`, `INFERENCE`, `UNCONFIRMED`, or `NEGATED` so interpretation is not silently promoted into canon.
 
-The engine manages one additional hidden-key Story Card, **🧠 EIDETIC — Current Played Continuity**, whose Notes contain the latest durable developments. Existing recurring Character cards receive a bounded `[[EIDETIC LIVE CONTINUITY]]` Notes block when relevant. Hand-written Notes outside that block and all Story Card Entry text are preserved.
+Schema 14 corrects an important AI Dungeon integration mistake from older builds: **live continuity is persisted through Story Card Entry using the official `updateStoryCard` path, not Story Card Notes.** Character cards keep their original Entry text and receive a bounded managed `[[EIDETIC LIVE CONTINUITY]]` block.
 
-This fixes the failure mode where EIDETIC remembered old scenario setup but did not visibly advance Story Cards after played events. Newer played continuity is explicitly marked as overriding stale setup/history, while uncertain conclusions remain labelled uncertain.
+The hidden-key **Current Played Continuity** card is a visible/persistent dashboard. It is not relied on as the model's active memory because hidden Story Card triggers are intentionally unlikely to fire. The newest relevant live continuity is instead injected into EIDETIC's Front Memory recall packet, where it can actually influence the next generation.
 
-Use `/live` to verify the system in an adventure. It reports durable live facts, Character-card Notes writes, continuity-card writes, and a preview of the latest captured facts.
+Short meaningful player actions are now queried from their own text instead of automatically inheriting the previous AI paragraph. This prevents an instruction such as `Plot a course for the checkpoint` from dragging unrelated characters and old history into recall.
+
+Strict knowledge still applies to live continuity: a private fact is not injected into a scene containing an NPC who did not know it.
+
+Use `/live` to verify the system. It reports durable live facts, Character-card Entry writes, Current Played Continuity Entry writes, Front Memory live-recall injections and the latest captured facts.
 
 
 
@@ -607,4 +611,23 @@ Ordinary uses of words such as **learned** no longer automatically make prose a 
 `learned to swim`, or other ordinary phrasing does not automatically become one.
 
 These changes are engine-wide and do not depend on any specific Scenario, universe or cast.
+
+
+
+## Schema 14 — AI Dungeon Story Card API + Current Context
+
+Schema 14 fixes the case where the script appeared to create a Current Played Continuity card but the card did not actually affect generation.
+
+- Managed continuity is written to **Story Card Entry**, not Notes.
+- Card changes use `updateStoryCard(index, keys, entry, type)` when available.
+- The Current Played Continuity card's Entry visibly updates with recent durable facts.
+- Relevant live continuity is also placed in **Front Memory**, so it does not depend on a Story Card trigger firing.
+- Character-card managed blocks are explicitly labelled private-to-that-character.
+- Short meaningful actions no longer borrow unrelated previous prose for retrieval.
+- Live-fact injection obeys the knowledge firewall.
+- Retry replacement purges discarded live facts.
+- Managed Entry blocks are excluded from Story Card seed signatures to avoid expensive self-rescanning.
+- Unknown-duration transitions such as sleep/waking mark story-time as partial, preventing false exact `20 minutes ago` claims after untracked time has passed.
+
+The scenario used to expose these failures is not encoded into the engine; the fixes are generic.
 
