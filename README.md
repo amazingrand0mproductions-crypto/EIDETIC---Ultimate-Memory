@@ -28,7 +28,7 @@ The Story Card **Entry** is the actual editable control panel. It contains only 
 
 The Story Card **Notes** contain the plain-English explanation of every option, recommended values, automatic features, and optional commands. This keeps the controls easy to edit while keeping the documentation separate.
 
-Edit only the value after `=` in Entry. The card controls the master switch, memory depth, recall size, strict knowledge boundaries, automatic detection, **detection mode**, the Current State Ledger, world memory, story-time tracking, narrative recall, abstention, active-character count, output spacing, and debug mode. `detectionMode = strict` is the recommended default: ambiguous names and objects remain provisional/episodic until direct evidence proves what they are. Existing older EIDETIC config cards are migrated into this layout while preserving their selected values. If the card cannot be created at all, the memory engine keeps running on safe defaults instead of breaking the Adventure.
+Edit only the value after `=` in Entry. The card controls the master switch, memory depth, recall size, strict knowledge boundaries, automatic detection, **detection mode**, the Current State Ledger, world memory, story-time tracking, narrative recall, abstention, active-character count, output spacing, and debug mode. `detectionMode = balanced` is the recommended default: strong human evidence can promote immediately while the Detection Fortress still rejects obvious junk; `strict` remains available for unusually noisy Scenarios. Existing older EIDETIC config cards are migrated into this layout while preserving their selected values. If the card cannot be created at all, the memory engine keeps running on safe defaults instead of breaking the Adventure.
 
 
 ## 🔄 Drop-In Existing Adventure Activation
@@ -278,7 +278,7 @@ This strengthens retrieval without requiring an external embedding service or an
 
 ## 🛡️ Detection Fortress
 
-EIDETIC uses a staged, **precision-first entity detector** before anything is allowed to become persistent structured memory. The recommended `detectionMode = strict` deliberately prefers a missed structured entity over a false permanent memory.
+EIDETIC uses a staged, **precision-first entity detector** before anything is allowed to become persistent structured memory. The recommended `detectionMode = balanced` lets strong human/entity evidence promote promptly while the Detection Fortress still rejects obvious junk. Use `strict` only when a Scenario is unusually noisy and you prefer missed structured entities over false promotions.
 
 Arbitrary capitalization is not enough. Generic noun phrases are not enough. Durable current-state facts require direct grammatical evidence, typed Story Cards, or repeated independent action-level evidence.
 
@@ -647,7 +647,7 @@ itself had run.
 
 Schema 15 uses **soft commands** instead:
 
-1. Input records the command and returns a non-empty safe marker with `stop: false`.
+1. Input records the command, preserves the player's non-empty slash command text, and returns `stop: false`.
 2. Context is reduced to a tiny utility instruction.
 3. The model performs one minimal utility generation.
 4. Output intercepts that generation and replaces it with the command result.
@@ -714,3 +714,49 @@ The mobile/Phoenix harness tests every public slash command, both thrown and fal
 Story Card failures, normal Output pass-through, Front Memory recall under a constrained
 context budget, command-artifact cleanup, and successful Current Played Continuity writes.
 
+
+
+## Schema 16 — Compact Config Notes + Durable Continuity
+
+Schema 16 reduces avoidable Story Card context use and cleans the live-continuity layer.
+
+### Config & Guide card
+
+The Config Story Card **Entry now contains only the editable `setting = value` lines**.
+The full explanation of every option is written to the card's **Notes/description** as
+human-only reference text. The engine never falls back to putting the guide back into
+Entry if a client strips Notes metadata.
+
+Existing bloated Schema 15 config cards migrate automatically while preserving their
+selected values. A parser bug found in a real Phoenix export was also fixed: a blank line
+such as `enabled =` can no longer consume the following `memoryDepth = ...` setting.
+
+AI Dungeon's documented scripting helper exposes `keys`, `entry` and `type` for card
+updates but does not expose a formal Notes argument. EIDETIC therefore writes Notes
+metadata directly on the Story Card object as best-effort UI help. If a client does not
+persist that metadata, the compact Entry and all settings still work; EIDETIC will not
+re-bloat Entry to compensate.
+
+### Cleaner Current Played Continuity
+
+The live dashboard and Character-card managed blocks now use a durability filter rather
+than mirroring every captured scene fragment. Transient details such as glances, someone
+not moving, a hand staying on a holster, generic player movement and incidental combat
+texture no longer crowd out actual continuity.
+
+Durable changes remain eligible, including arrivals/departures, current location/status,
+relationships, jobs/affiliations, injury/death/custody, discoveries, ownership, important
+mission/route changes, major evidence and other persistent consequences.
+
+Schema 16 also protects titles/initials/decimals while splitting sentences, so text such
+as `Dr. Nalini Choudhury` is not broken into malformed fragments.
+
+### Export/update migration
+
+Older `[[EIDETIC LIVE CONTINUITY]]` and Current Played Continuity blocks are re-filtered
+when Schema 16 first runs. If Story Cards were exported/imported without `state.__EIDETIC`,
+EIDETIC can recover durable managed lines, reject transient ones and normalize the blocks
+instead of blindly preserving old noise.
+
+These changes are generic; the test Scenarios used to expose failures are not encoded in
+the engine.

@@ -103,7 +103,7 @@ const EIDETIC_CONFIG = {
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 15;
+  const SCHEMA_REVISION = 16;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -18082,7 +18082,7 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null, configNotesPersistence: "unknown", needsSchema16CardCleanup: false, managedCardCleanupIndex: 0, managedCardImportDone: false },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
       stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
@@ -18124,6 +18124,10 @@ const EIDETIC = (() => {
     if (typeof r.runtime.configCardMode !== "string") r.runtime.configCardMode = "";
     if (typeof r.runtime.configProbePending !== "boolean") r.runtime.configProbePending = false;
     if (typeof r.runtime.configCardWarned !== "boolean") r.runtime.configCardWarned = false;
+    if (typeof r.runtime.configNotesPersistence !== "string") r.runtime.configNotesPersistence = "unknown";
+    if (typeof r.runtime.needsSchema16CardCleanup !== "boolean") r.runtime.needsSchema16CardCleanup = false;
+    if (!Number.isFinite(r.runtime.managedCardCleanupIndex)) r.runtime.managedCardCleanupIndex = 0;
+    if (typeof r.runtime.managedCardImportDone !== "boolean") r.runtime.managedCardImportDone = false;
     if (!(typeof r.runtime.configCardId === "number" || typeof r.runtime.configCardId === "string")) r.runtime.configCardId = "";
     if (typeof r.runtime.bootstrapDone !== "boolean") r.runtime.bootstrapDone = !!((r.hot && r.hot.length) || (r.cold && r.cold.length) || (r.anchors && r.anchors.length) || (r.ledger && r.ledger.length));
     if (!Number.isFinite(r.runtime.bootstrapImported)) r.runtime.bootstrapImported = 0;
@@ -18148,6 +18152,10 @@ const EIDETIC = (() => {
     const needsSchemaMigration = previousSchema < SCHEMA_REVISION;
     if (previousSchema > 0 && previousSchema < 12) r.runtime.migrateDetectionDefaultToBalanced = true;
     if (previousSchema > 0 && previousSchema < 15) r.runtime.migrateOutputSpacingToPreserve = true;
+    if (previousSchema > 0 && previousSchema < 16) {
+      r.runtime.needsSchema16CardCleanup = true;
+      r.runtime.managedCardCleanupIndex = 0;
+    }
     const needsColdPacking = r.cold.some(x => x && !Array.isArray(x));
     if (needsSchemaMigration || needsColdPacking || Object.prototype.hasOwnProperty.call(r, "v")) {
       r.stats.migrations = (r.stats.migrations || 0) + 1;
@@ -18880,11 +18888,10 @@ const EIDETIC = (() => {
 
   function configCardEntry(values) {
     const v = Object.assign(configCardDefaults(), values || {});
+    // Keep Entry deliberately tiny: only editable settings belong in model-visible text.
+    // The human-facing explanations live in Story Card Notes/description when Phoenix
+    // preserves that metadata.
     return [
-      "🧠 EIDETIC — SETTINGS",
-      "",
-      "Edit only the value after =",
-      "",
       "enabled = " + v.enabled,
       "memoryDepth = " + v.memoryDepth,
       "recallSize = " + v.recallSize,
@@ -18898,9 +18905,7 @@ const EIDETIC = (() => {
       "abstainOnMiss = " + v.abstainOnMiss,
       "activeCharacters = " + v.activeCharacters,
       "outputSpacing = " + v.outputSpacing,
-      "debug = " + v.debug,
-      "",
-      "A simple explanation of every option is included below the settings."
+      "debug = " + v.debug
     ].join("\n");
   }
 
@@ -18909,7 +18914,7 @@ const EIDETIC = (() => {
       "🧠 EIDETIC — CONFIG GUIDE",
       "",
       "EIDETIC works automatically. You do not need commands, a setup card, or a character list.",
-      "The editable controls are in this Story Card's Entry. Change only the value after = and keep the setting names unchanged.",
+      "The Entry contains only editable settings. This Notes section explains every option. Change only the value after = and keep the setting names unchanged.",
       "",
       "⚙️ MAIN OPTIONS",
       "",
@@ -19023,7 +19028,7 @@ const EIDETIC = (() => {
   }
 
   function configValue(text, key) {
-    const m = safeText(text).match(new RegExp("^\\s*" + escapeRe(key) + "\\s*=\\s*([^\\r\\n#]+)", "im"));
+    const m = safeText(text).match(new RegExp("^[ \t]*" + escapeRe(key) + "[ \t]*=[ \t]*([^\\r\\n#]+)", "im"));
     return m ? m[1].trim().toLowerCase() : "";
   }
 
@@ -19105,36 +19110,43 @@ const EIDETIC = (() => {
     }
     const panel = configCardEntry(values);
     const guide = configCardNotes();
-    const fullEntry = panel + "\n\n" + guide;
 
     try { c.title = "🧠 EIDETIC — Config & Guide"; } catch (_) {}
-    // Entry is the supported Story Card text field. Avoid rewriting an unchanged card
-    // three times per generation; this matters on Phoenix/mobile.
-    const needsWrite=safeText(c.entry!=null?c.entry:c.value)!==fullEntry ||
+    // Only settings belong in Entry. Long help text in Entry wastes triggered context.
+    const needsWrite=safeText(c.entry!=null?c.entry:c.value)!==panel ||
       safeText(c.keys)!==EIDETIC_CONFIG.CONFIG_CARD_KEY || safeText(c.type)!=="Custom";
-    if(needsWrite) persistStoryCard(idx, EIDETIC_CONFIG.CONFIG_CARD_KEY, fullEntry, "Custom");
+    if(needsWrite) persistStoryCard(idx, EIDETIC_CONFIG.CONFIG_CARD_KEY, panel, "Custom");
+
+    // Phoenix's documented scripting helper does not expose a Notes argument, but full
+    // Story Card objects commonly carry description/notes metadata. Write it directly as
+    // best-effort human-only help; never fall back to bloating Entry if metadata is stripped.
+    const target=(typeof storyCards!=="undefined"&&Array.isArray(storyCards)&&storyCards[idx])?storyCards[idx]:c;
+    const notesOk=tryWriteConfigNotes(target, guide);
+    try { target.title = "🧠 EIDETIC — Config & Guide"; } catch (_) {}
 
     if (r && r.runtime) {
-      r.runtime.configCardMode = "entry";
+      r.runtime.configCardMode = "entry+notes";
+      r.runtime.configNotesPersistence = notesOk ? "written" : "unavailable";
       r.runtime.configProbePending = false;
-      r.runtime.configGuideSig = hash(panel);
+      r.runtime.configGuideSig = hash(guide);
       r.runtime.configCardWarned = false;
     }
 
-    return c;
+    return target;
   }
 
   function setConfigValueInCard(key, value) {
     const c = ensureConfigCard();
     if (!c) return false;
-    const re = new RegExp("^(\\s*" + escapeRe(key) + "\\s*=\\s*)[^\\r\\n#]+", "im");
+    const re = new RegExp("^([ \t]*" + escapeRe(key) + "[ \t]*=[ \t]*)[^\\r\\n#]*", "im");
     let panel = safeText(c.entry);
     if (!re.test(panel)) return false;
     panel = panel.replace(re, "$1" + safeText(value));
     const idx=findConfigCardIndex();
     if(idx<0||!persistStoryCard(idx,EIDETIC_CONFIG.CONFIG_CARD_KEY,panel,"Custom"))return false;
+    if(typeof storyCards!=="undefined"&&Array.isArray(storyCards)&&storyCards[idx]) tryWriteConfigNotes(storyCards[idx],configCardNotes());
     const r = root();
-    if (r && r.runtime) r.runtime.configGuideSig = hash(panel);
+    if (r && r.runtime) r.runtime.configGuideSig = hash(configCardNotes());
     return true;
   }
 
@@ -19255,9 +19267,49 @@ const EIDETIC = (() => {
   function liveFactEligible(text, mode, imp) {
     const t=cleanText(text); if(!t||mode==="question"||t.length<12)return false;
     if(/^(?:okay|right|yes|no|yeah|yeh|thanks|thank you|hello|hi|bye|goodnight|night)\b[.!?]*$/i.test(t))return false;
-    if(mode==="event"||mode==="player-event") return imp>=3 || /\b(?:arriv(?:e|es|ed)|leav(?:e|es|ing)|return(?:s|ed)?|discover(?:s|ed)?|find(?:s|ing)?|found|attack(?:s|ed)?|injur(?:e|es|ed)|destroy(?:s|ed)?|die(?:s|d)?|dead|alive|missing|move(?:s|d)?|stay(?:s|ed)?|learn(?:s|ed)?|tell(?:s|ing)?|told|reveal(?:s|ed)?|measure(?:s|d)?|match(?:es|ed)?|orbit(?:s|ing)?|pod|vision|anomaly|relationship|partner|married|dating|pregnant|birthday|years? old|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|depart(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translate(?:s|d)?|translation|reply|response|crew|mission|route)\b/i.test(t);
+    if(mode==="event"||mode==="player-event") return imp>=3 || /\b(?:arriv(?:e|es|ed)|leav(?:e|es|ing)|return(?:s|ed)?|discover(?:s|ed)?|find(?:s|ing)?|found|attack(?:s|ed)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|seize(?:s|d)?|escape(?:s|d)?|custody|injur(?:e|es|ed)|wound(?:s|ed)?|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|die(?:s|d)?|dead|alive|missing|move(?:s|d)?|stay(?:s|ed)?|learn(?:s|ed)?|tell(?:s|ing)?|told|reveal(?:s|ed)?|confirm(?:s|ed)?|measure(?:s|d)?|match(?:es|ed)?|orbit(?:s|ing)?|pod|vision|anomaly|relationship|partner|married|dating|pregnant|birthday|years? old|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|depart(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translate(?:s|d)?|translation|reply|response|crew|mission|objective|route|anchor key|dead hour|revision mark|offline|ownership)\b/i.test(t);
     return mode==="claim"||mode==="belief"||mode==="uncertain";
   }
+  function liveFactDurabilityScore(f) {
+    if(!f)return -99;
+    if(Number.isFinite(f.cardScore16))return f.cardScore16;
+    const t=cleanText(f.text), low=t.toLowerCase();
+    if(!t)return -99;
+    const wordCount=t.split(/\s+/).filter(Boolean).length;
+    let score=0;
+    const names=Array.isArray(f.names)?f.names:[];
+    const world=Array.isArray(f.world)?f.world:[];
+    if(t.length<18||wordCount<3)score-=4;
+    if(f.status==="FACT"||f.status==="NEGATED")score+=1;
+    else if(/^(?:CLAIM|BELIEF|INFERENCE|UNCONFIRMED)$/.test(safeText(f.status)))score-=0.5;
+    if(names.length)score+=1;
+    if(world.some(w=>!/^character:/i.test(safeText(w))))score+=1;
+
+    // Fast durable-state patterns. Deliberately avoid generic "moved" so lines like
+    // "hasn't moved from the gate" do not become current location facts.
+    const stateLike=/\b(?:lives?|resides?|stays?)\s+(?:in|at|on|near|with)\b|\b(?:moved|moves|relocated)\s+(?:(?:from\s+[^.!?]{1,70}?\s+)?(?:to|into|back to))\b|\bworks?\s+as\b|\b(?:is|was|became|becomes|remains|has become)\s+(?:now\s+|currently\s+|still\s+)?(?:dead|alive|resurrected|revived|injured|wounded|pregnant|missing|unconscious|awake|ill|sick|healthy|retired|imprisoned|incarcerated|hospitalized|hospitalised)\b|\b(?:is|became|becomes|remains)\s+(?:now\s+|currently\s+)?(?:married to|dating|engaged to|friends with|estranged from|divorced from|separated from|in a relationship with)\b|\b(?:real name is|is known as|codename is|code name is|alias is|goes by)\b|\b(?:joined|joins|is a member of|belongs to|works for)\b/i;
+    if(stateLike.test(t))score+=5;
+
+    const durable=/\b(?:arriv(?:e|es|ed)|depart(?:s|ed|ing)?|return(?:s|ed)?|relocat(?:e|es|ed)|discover(?:s|ed)?|learn(?:s|ed)?|reveal(?:s|ed)?|confirm(?:s|ed)?|prove(?:s|d)?|identify(?:ies|ied)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|seize(?:s|d)?|escape(?:s|d)?|injur(?:e|es|ed)|wound(?:s|ed)?|hospitali[sz](?:e|es|ed)|die(?:s|d)?|dead|alive|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|offline|online|stolen|steal(?:s|ing)?|owns?|ownership|possess(?:es|ed)?|gives?|gave|takes?|took|loses?|lost|married|divorc(?:e|es|ed)|engag(?:e|es|ed)|dating|partner|pregnan(?:t|cy)|born|job|works? as|promot(?:e|es|ed)|retir(?:e|es|ed)|joins?|joined|leaves? (?:the )?(?:team|agency|group|faction)|real name|codename|alias|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|course for|mission|objective|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translation|route|anchor key|dead hour|revision mark|evidence|warrant|contract|database|injury|relationship)\b/i;
+    if(durable.test(t))score+=4;
+
+    const major=/\b(?:explosion|collapse|fire|attack|assault|fight|battle|ambush|rescue|hostage|evacuat(?:e|es|ed|ion)|containment|blackout|temporal|anomaly|orbit|pod|vehicle|ship|base|lab|hospital|police|time force|revision)\b/i;
+    if(major.test(t)&&(names.length||world.length))score+=2;
+
+    const transient=/\b(?:looks?|glances?|watches?|stares?|nods?|smiles?|grins?|shrugs?|tilts? (?:his|her|their|the) head|takes? one step|steps? (?:forward|back)|moves? (?:forward|back|closer)|hasn['’]t moved|has not moved|doesn['’]t move|does not move|hand (?:rests?|stays?|moves?)|gaze|breath|breathing|says?|asks?|replies?|answers?|murmurs?|mutters?|yells?|shouts?)\b/i;
+    if(transient.test(t)&&!durable.test(t))score-=3;
+
+    const genericPlayer=/^(?:you|i)\s+(?:leave|wait|look|watch|walk|move|go|eat|sleep|sit|stand|nod|turn|run)\b/i;
+    if(genericPlayer.test(t)&&!durable.test(t))score-=5;
+    if(/^["“']?[^.!?]{0,45}["”']?\s*(?:,\s*)?(?:he|she|they)\s+says?\b/i.test(t)&&!durable.test(t))score-=3;
+    if(!names.length&&!world.length&&/^(?:i|you|he|she|they|his|her|their)\b/i.test(low)&&!durable.test(t))score-=2;
+    try{f.cardScore16=score;}catch(_){}
+    return score;
+  }
+  function liveFactCardEligible(f) {
+    return liveFactDurabilityScore(f)>=3;
+  }
+
   function addLiveFact(text, owners, turn, kind, mode, imp, src) {
     const r=root(); if(!r||!liveFactEligible(text,mode,imp))return;
     const shown=displayText(text,EIDETIC_CONFIG.LIVE_FACT_CHARS), status=evidenceState(shown,mode);
@@ -19289,7 +19341,7 @@ const EIDETIC = (() => {
     // Character-card continuity is primarily ABOUT the character. Merely witnessing a
     // general scene must not evict direct personal/state facts from the small card block.
     for(let i=r.liveFacts.length-1;i>=0;i--){
-      const f=r.liveFacts[i]; if(!f)continue;
+      const f=r.liveFacts[i]; if(!f||!liveFactCardEligible(f))continue;
       if((f.names||[]).indexOf(charKey)>=0) direct.push(f);
       else if((f.owners||[]).indexOf(charKey)>=0) witnessed.push(f);
       if(direct.length>=max && witnessed.length>=max)break;
@@ -19330,6 +19382,112 @@ const EIDETIC = (() => {
       lines.shift();
     }
     return false;
+  }
+
+  function characterKeyForStoryCard(card) {
+    if(!card)return "";
+    const candidates=[];
+    const id=storyCardIdentityName(stableStoryCardEntry(card));
+    if(id)candidates.push(id);
+    if(safeText(card.title).trim())candidates.push(safeText(card.title).trim());
+    splitKeys(card.keys).forEach(k=>candidates.push(k));
+    for(let i=0;i<candidates.length;i++){
+      const k=getCharKey(candidates[i]);
+      if(k)return k;
+    }
+    return "";
+  }
+
+  function managedFactLines(text, open, close) {
+    text=safeText(text); const a=text.indexOf(open), b=text.indexOf(close);
+    if(a<0||b<a)return[];
+    const inner=text.slice(a+open.length,b), out=[];
+    const re=/^\s*T(\d+)\s+\[([A-Z-]+)\]\s+(.+?)\s*$/gmi;
+    let m;
+    while((m=re.exec(inner))!==null){
+      const turn=Math.max(0,Number(m[1])||0), status=safeText(m[2]).toUpperCase(), fact=cleanText(m[3]);
+      if(!fact)continue;
+      out.push({turn,status,text:fact});
+    }
+    return out;
+  }
+
+  function importManagedContinuityFromStoryCards() {
+    const r=root();
+    if(!r||!r.runtime||r.runtime.managedCardImportDone)return 0;
+    r.runtime.managedCardImportDone=true;
+    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return 0;
+    const seen=new Set((r.liveFacts||[]).map(f=>safeText(f&&f.fp)).filter(Boolean));
+    let imported=0, foundManaged=false;
+    const push=(raw, owners, forcedNames)=>{
+      const status=/^(?:FACT|CLAIM|BELIEF|INFERENCE|UNCONFIRMED|NEGATED)$/.test(raw.status)?raw.status:"UNCONFIRMED";
+      const names=(forcedNames&&forcedNames.length?forcedNames:namesMentioned(raw.text)).filter(Boolean);
+      const mode=status==="CLAIM"?"claim":status==="BELIEF"?"belief":/^(?:INFERENCE|UNCONFIRMED)$/.test(status)?"uncertain":"event";
+      const fp=hash(status+"|"+cleanText(raw.text).toLowerCase());
+      if(seen.has(fp))return;
+      const f={id:"lf"+(++r.seq),turn:raw.turn,kind:"output",mode,status,text:displayText(raw.text,EIDETIC_CONFIG.LIVE_FACT_CHARS),owners:Array.from(new Set(owners||[PLAYER])),names,world:[],src:"story-card-managed-import",fp,origin:"card-import"};
+      if(!liveFactCardEligible(f))return;
+      r.liveFacts.push(f); seen.add(fp); imported++;
+    };
+
+    // Import private managed character facts first so duplicate dashboard lines retain
+    // the narrower knowledge ownership instead of becoming narrator-global.
+    for(let i=0;i<storyCards.length;i++){
+      const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase(), entry=safeText(c.entry!=null?c.entry:c.value);
+      if(entry.indexOf(EIDETIC_ENTRY_OPEN)<0||!/character|npc|person|people|cast/.test(type))continue;
+      foundManaged=true;
+      const key=characterKeyForStoryCard(c), owners=[PLAYER]; if(key)owners.push(key);
+      const lines=managedFactLines(entry,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
+      for(let j=0;j<lines.length;j++)push(lines[j],owners,key?[key]:[]);
+    }
+    const ci=findCurrentContinuityCardIndex();
+    if(ci>=0&&storyCards[ci]){
+      const entry=safeText(storyCards[ci].entry!=null?storyCards[ci].entry:storyCards[ci].value);
+      if(entry.indexOf(EIDETIC_CURRENT_OPEN)>=0){
+        foundManaged=true;
+        const lines=managedFactLines(entry,EIDETIC_CURRENT_OPEN,EIDETIC_CURRENT_CLOSE);
+        for(let j=0;j<lines.length;j++)push(lines[j],[PLAYER],[]);
+      }
+    }
+    if(r.liveFacts.length>EIDETIC_CONFIG.LIVE_FACT_LIMIT)r.liveFacts.splice(0,r.liveFacts.length-EIDETIC_CONFIG.LIVE_FACT_LIMIT);
+    if(imported){
+      r.stats.managedCardImports=Number(r.stats.managedCardImports||0)+imported;
+      r.stats.liveFacts=Number(r.stats.liveFacts||0)+imported;
+    }
+    // Any managed block present is ours and should be normalized by the Schema 16
+    // durability filter, including when cards were imported into a fresh Adventure.
+    if(foundManaged){r.runtime.needsSchema16CardCleanup=true;r.runtime.managedCardCleanupIndex=0;}
+    return imported;
+  }
+
+  function cleanupLegacyManagedCharacterCards(batch) {
+    const r=root();
+    if(!r||!r.runtime||!r.runtime.needsSchema16CardCleanup)return;
+    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return;
+    if(!cardSyncAllowed(false))return;
+    let i=Math.max(0,Number(r.runtime.managedCardCleanupIndex)||0), handled=0;
+    const max=Math.max(1,Math.min(8,Number(batch)||4));
+    for(;i<storyCards.length&&handled<max;i++){
+      const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase();
+      const original=safeText(c.entry!=null?c.entry:c.value);
+      if(!/character|npc|person|people|cast/.test(type)||original.indexOf(EIDETIC_ENTRY_OPEN)<0)continue;
+      handled++;
+      const key=characterKeyForStoryCard(c);
+      const facts=key?liveFactsForCharacter(key,EIDETIC_CONFIG.CARD_NOTE_FACTS):[];
+      if(key&&facts.length){
+        writeCharacterLiveNotes(key);
+      }else{
+        const base=stripManagedEntryBlock(original,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
+        if(base!==original)persistStoryCard(i,safeText(c.keys),base,safeText(c.type)||"Character");
+      }
+    }
+    r.runtime.managedCardCleanupIndex=i;
+    // Clean the global dashboard immediately from existing Schema 15 liveFacts too.
+    syncCurrentContinuityCard();
+    if(i>=storyCards.length){
+      r.runtime.needsSchema16CardCleanup=false;
+      r.runtime.managedCardCleanupIndex=0;
+    }
   }
 
   function findCurrentContinuityCardIndex(){
@@ -19377,7 +19535,7 @@ const EIDETIC = (() => {
   function syncCurrentContinuityCard(){
     const r=root(),found=ensureCurrentContinuityCard(); if(!r||!found)return false;
     const c=found.card, idx=found.index;
-    const facts=(r.liveFacts||[]).slice(-EIDETIC_CONFIG.CURRENT_CARD_FACTS);
+    const facts=(r.liveFacts||[]).filter(liveFactCardEligible).slice(-EIDETIC_CONFIG.CURRENT_CARD_FACTS);
     const next=currentContinuityCardEntry(facts);
     const old=safeText(c.entry!=null?c.entry:c.value);
     if(old===next && safeText(c.keys)===EIDETIC_CONFIG.CURRENT_CONTINUITY_KEY && safeText(c.type)==="Custom")return false;
@@ -19680,10 +19838,20 @@ const EIDETIC = (() => {
     text = cleanText(text);
     if (!text) return [];
     const max = EIDETIC_CONFIG.EVENT_CHUNK_CHARS;
-    const sentences = text.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [text];
+    // Avoid cutting durable facts into nonsense fragments at titles/initials/decimals
+    // such as "Dr. Nalini Choudhury" or "J. R. Vale".
+    const DOT="\uE000";
+    let protectedText=text
+      .replace(/\b(Dr|Mr|Mrs|Ms|Mx|Prof|Professor|Capt|Captain|Cmdr|Commander|Sgt|Sergeant|Lt|Lieutenant|Gen|General|Col|Colonel|Maj|Major|Rev|St|Sr|Jr|No|Dept|Gov|Sen|Rep)\./gi,(m,a)=>a+DOT)
+      .replace(/\b(?:[A-Z]\.){2,}/g,m=>m.replace(/\./g,DOT))
+      .replace(/\b([A-Z])\.(?=\s*[A-ZÀ-ÖØ-Þ])/g,(m,a)=>a+DOT)
+      .replace(/(\d)\.(\d)/g,(m,a,b)=>a+DOT+b)
+      .replace(/\b([ap])\.m\./gi,(m,a)=>a+DOT+"m"+DOT);
+    const restore=s=>safeText(s).replace(new RegExp(DOT,"g"),".");
+    const sentences = protectedText.match(/[^.!?]+[.!?]+|[^.!?]+$/g) || [protectedText];
     const out = [];
     for (let i = 0; i < sentences.length; i++) {
-      const sentence = sentences[i].trim();
+      const sentence = restore(sentences[i]).trim();
       if (!sentence) continue;
       if (sentence.length <= max) out.push(sentence);
       else {
@@ -21289,7 +21457,7 @@ const EIDETIC = (() => {
     const candidates=[];
     const start=Math.max(0,r.liveFacts.length-48);
     for(let i=start;i<r.liveFacts.length;i++){
-      const f=r.liveFacts[i]; if(!f)continue;
+      const f=r.liveFacts[i]; if(!f||!liveFactCardEligible(f))continue;
       if(EIDETIC_CONFIG.STRICT_KNOWLEDGE){
         const gate=(Array.isArray(activeCharactersForScene)&&activeCharactersForScene.length?activeCharactersForScene:presentSceneCharacters());
         if(gate.length){
@@ -21818,6 +21986,8 @@ const EIDETIC = (() => {
     seedConfiguredCharacters();
     applyConfigCard();
     seedFromStoryCards();
+    importManagedContinuityFromStoryCards();
+    cleanupLegacyManagedCharacterCards(4);
     seedWorldEntitiesFromStoryCards();
     const imported = bootstrapExistingHistory();
     announceActivation(imported);
@@ -21937,6 +22107,10 @@ const EIDETIC = (() => {
     strictEventCategory: strictEventCategory,
     evidenceState: evidenceState,
     addLiveFact: addLiveFact,
+    liveFactDurabilityScore: liveFactDurabilityScore,
+    liveFactCardEligible: liveFactCardEligible,
+    cleanupLegacyManagedCharacterCards: cleanupLegacyManagedCharacterCards,
+    importManagedContinuityFromStoryCards: importManagedContinuityFromStoryCards,
     syncLiveStoryCards: syncLiveStoryCards,
     stripEideticNotes: stripEideticNotes,
     idleActivationRecallBlock: idleActivationRecallBlock,
