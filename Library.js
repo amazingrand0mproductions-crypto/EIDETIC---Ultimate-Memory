@@ -92,6 +92,13 @@ const EIDETIC_CONFIG = {
   CURRENT_CARD_FACTS: 8,
   LIVE_RECALL_FACTS: 3,
 
+  // Character Insight Ledger: major revelations + important statements.
+  CHARACTER_INSIGHT_LIMIT: 900,
+  CHARACTER_INSIGHT_RECALL: 2,
+  CHARACTER_INSIGHT_CHARS: 280,
+  CHARACTER_NOTE_INSIGHTS: 10,
+  CHARACTER_NOTE_BLOCK_CHARS: 3600,
+
   // Phoenix/mobile-safe integration.
   COMMAND_MODE: "soft", // soft = no Input stop/error; command result is returned as a utility line
   LEGACY_STATE_MESSAGE: false, // Phoenix docs say state.message is not implemented
@@ -103,7 +110,7 @@ const EIDETIC_CONFIG = {
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 16;
+  const SCHEMA_REVISION = 17;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -18075,6 +18082,7 @@ const EIDETIC = (() => {
       anchors: [],
       ledger: [],
       liveFacts: [],
+      insights: [],
       world: { entities: {}, candidates: {}, facts: [], timeline: [], clock: { hours: 0, baseEpochHours: null, currentDateLabel: "", currentTimeLabel: "", knownElapsed: false, partial: false } },
       chars: {},
       candidates: {},
@@ -18082,9 +18090,9 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null, configNotesPersistence: "unknown", needsSchema16CardCleanup: false, managedCardCleanupIndex: 0, managedCardImportDone: false },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null, configNotesPersistence: "unknown", needsSchema16CardCleanup: false, managedCardCleanupIndex: 0, managedCardImportDone: false, needsSchema17InsightMigration: false, insightMigrationDone: false, insightSyncSig: "", characterNotesPersistence: "unknown", characterNotesRetryTurn: 0, characterNoteExpected: null },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
-      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0 },
+      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0, characterInsights: 0, characterInsightNotes: 0, characterInsightRecalls: 0, characterInsightMigrations: 0, characterInsightSupersessions: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
     };
   }
@@ -18128,6 +18136,12 @@ const EIDETIC = (() => {
     if (typeof r.runtime.needsSchema16CardCleanup !== "boolean") r.runtime.needsSchema16CardCleanup = false;
     if (!Number.isFinite(r.runtime.managedCardCleanupIndex)) r.runtime.managedCardCleanupIndex = 0;
     if (typeof r.runtime.managedCardImportDone !== "boolean") r.runtime.managedCardImportDone = false;
+    if (typeof r.runtime.needsSchema17InsightMigration !== "boolean") r.runtime.needsSchema17InsightMigration = false;
+    if (typeof r.runtime.insightMigrationDone !== "boolean") r.runtime.insightMigrationDone = false;
+    if (typeof r.runtime.insightSyncSig !== "string") r.runtime.insightSyncSig = "";
+    if (typeof r.runtime.characterNotesPersistence !== "string") r.runtime.characterNotesPersistence = "unknown";
+    if (!Number.isFinite(r.runtime.characterNotesRetryTurn)) r.runtime.characterNotesRetryTurn = 0;
+    if (!("characterNoteExpected" in r.runtime)) r.runtime.characterNoteExpected = null;
     if (!(typeof r.runtime.configCardId === "number" || typeof r.runtime.configCardId === "string")) r.runtime.configCardId = "";
     if (typeof r.runtime.bootstrapDone !== "boolean") r.runtime.bootstrapDone = !!((r.hot && r.hot.length) || (r.cold && r.cold.length) || (r.anchors && r.anchors.length) || (r.ledger && r.ledger.length));
     if (!Number.isFinite(r.runtime.bootstrapImported)) r.runtime.bootstrapImported = 0;
@@ -18144,6 +18158,7 @@ const EIDETIC = (() => {
     if (!Number.isFinite(r.runtime.cardRetryTurn)) r.runtime.cardRetryTurn = 0;
     if (typeof r.runtime.migrateOutputSpacingToPreserve !== "boolean") r.runtime.migrateOutputSpacingToPreserve = false;
     if (!Array.isArray(r.liveFacts)) r.liveFacts = [];
+    if (!Array.isArray(r.insights)) r.insights = [];
     if (!r.stats || typeof r.stats !== "object") r.stats = {};
     if (!r.last || typeof r.last !== "object") r.last = {};
     if (!Number.isFinite(r.last.inputTurn)) r.last.inputTurn = -1;
@@ -18155,6 +18170,11 @@ const EIDETIC = (() => {
     if (previousSchema > 0 && previousSchema < 16) {
       r.runtime.needsSchema16CardCleanup = true;
       r.runtime.managedCardCleanupIndex = 0;
+    }
+    if (previousSchema > 0 && previousSchema < 17) {
+      r.runtime.needsSchema17InsightMigration = true;
+      r.runtime.insightMigrationDone = false;
+      r.runtime.insightSyncSig = "";
     }
     const needsColdPacking = r.cold.some(x => x && !Array.isArray(x));
     if (needsSchemaMigration || needsColdPacking || Object.prototype.hasOwnProperty.call(r, "v")) {
@@ -18971,6 +18991,7 @@ const EIDETIC = (() => {
       "✨ WHAT EIDETIC HANDLES AUTOMATICALLY",
       "• Hot + cold episodic memory and durable anchors",
       "• Character-scoped knowledge and witness tracking",
+      "• Major character reveals, promises, confessions, goals, boundaries and important statements mirrored to Character Notes and retained in a structured insight ledger",
       "• Facts, claims, suspicions, uncertainty and unresolved questions",
       "• Current-state tracking without deleting historical states",
       "• Scenario-wide locations, items, vehicles, organizations and major events",
@@ -19204,6 +19225,8 @@ const EIDETIC = (() => {
   const EIDETIC_ENTRY_CLOSE = "[[/EIDETIC LIVE CONTINUITY]]";
   const EIDETIC_CURRENT_OPEN = "[[EIDETIC CURRENT PLAYED CONTINUITY]]";
   const EIDETIC_CURRENT_CLOSE = "[[/EIDETIC CURRENT PLAYED CONTINUITY]]";
+  const EIDETIC_INSIGHT_NOTES_OPEN = "[[EIDETIC IMPORTANT CHARACTER CONTINUITY]]";
+  const EIDETIC_INSIGHT_NOTES_CLOSE = "[[/EIDETIC IMPORTANT CHARACTER CONTINUITY]]";
 
   function stripEideticNotes(text) {
     text=safeText(text); const a=text.indexOf(EIDETIC_NOTES_OPEN), b=text.indexOf(EIDETIC_NOTES_CLOSE);
@@ -19324,6 +19347,314 @@ const EIDETIC = (() => {
     if(r.liveFacts.length>EIDETIC_CONFIG.LIVE_FACT_LIMIT)r.liveFacts.splice(0,r.liveFacts.length-EIDETIC_CONFIG.LIVE_FACT_LIMIT);
     r.stats.liveFacts=Number(r.stats.liveFacts||0)+1;
   }
+
+  // -------------------------------------------------------------------------
+  // Character Insight Ledger (Schema 17)
+  // -------------------------------------------------------------------------
+  function insightCategory(text, speech) {
+    const t=cleanText(text);
+    if(/\b(?:confess(?:es|ed|ion)?|admits?|admitted|i\s+(?:killed|murdered|betrayed|lied|stole|caused|did it)|truth is)\b/i.test(t))return"CONFESSION";
+    if(/\b(?:promise(?:s|d)?|swear(?:s)?|swore|vow(?:s|ed)?|i['’]?ll\b|i will\b|i won['’]?t\b)\b/i.test(t))return"PROMISE";
+    if(/\b(?:threat(?:en|ens|ened)?|i['’]?ll\s+(?:kill|hurt|destroy|expose|ruin)|i will\s+(?:kill|hurt|destroy|expose|ruin))\b/i.test(t))return"THREAT";
+    if(/\b(?:real name|known as|codename|code name|alias|actually\s+(?:am|is|was)|identity)\b/i.test(t))return"IDENTITY";
+    if(/\b(?:mother|father|mum|mom|dad|sister|brother|daughter|son|wife|husband|spouse|partner|married|dating|engaged|divorced|separated|love\b|trust\b|hate\b)\b/i.test(t))return"RELATIONSHIP";
+    if(/\b(?:works? for|worked for|joined|member of|belongs to|loyal to|defect(?:s|ed)?|betray(?:s|ed)?|faction|agency|organization|organisation|team)\b/i.test(t))return"ALLEGIANCE";
+    if(/\b(?:power|ability|weakness|allergy|can\s+[a-z]+|cannot\s+[a-z]+|can['’]?t\s+[a-z]+|immune|vulnerable|limit(?:s|ation)?)\b/i.test(t))return"ABILITY";
+    if(/\b(?:dead|alive|injured|wounded|pregnant|missing|unconscious|awake|diagnos(?:ed|is)|hospitali[sz]ed|ill|sick|healthy|recovered|recovers|cleared for (?:field )?duty|retired|imprisoned)\b/i.test(t))return"STATUS";
+    if(/\b(?:secret|classified|hid(?:den)?|kept from|nobody knows|don['’]?t tell|never told|cover[- ]?up)\b/i.test(t))return"SECRET";
+    if(/\b(?:plan(?:s|ned)?|intend(?:s|ed)?|goal|objective|want(?:s|ed)? to|need(?:s|ed)? to|going to|means? to)\b/i.test(t))return"GOAL";
+    if(/\b(?:refuse(?:s|d)?|won['’]?t|will not|never again|boundary|do not|don['’]?t)\b/i.test(t))return"BOUNDARY";
+    if(/\b(?:remember(?:s|ed)?|saw|witnessed|knows?|knew|found out|learned that|was there|used to|back when|years ago|before i)\b/i.test(t))return"HISTORY";
+    if(/\b(?:believe(?:s|d)?|think(?:s|ing)?|suspect(?:s|ed)?|fear(?:s|ed)?|theory|guess)\b/i.test(t))return"BELIEF";
+    if(/\b(?:anchor key|dead hour|target|coordinates?|checkpoint|waypoint|rendezvous|deadline|attack starts|attack begins|operation starts|operation begins|hidden in|stored in|located in|located at)\b/i.test(t))return"INTEL";
+    if(/\b(?:warn(?:s|ed)?|evidence|proof|saw|heard|tracked|recorded|found|discovered)\b/i.test(t))return"KNOWLEDGE";
+    return speech?"STATEMENT":"REVEAL";
+  }
+
+  function importantSpeechScore(text, verb) {
+    const t=cleanText(text); if(!t||t.length<8||/\?\s*$/.test(t))return-99;
+    let score=importance(t);
+    const wc=t.split(/\s+/).filter(Boolean).length;
+    if(wc<3)score-=3;
+    if(/^(?:okay|ok|yes|no|yeah|yeh|thanks|thank you|hello|hi|bye|goodnight|fine|sure|right)[.!?]*$/i.test(t))return-99;
+    if(/\b(?:admit|admits|admitted|confess|confesses|confessed|reveal|reveals|revealed|promise|promises|promised|swear|swears|swore|vow|vows|vowed|warn|warns|warned|threaten|threatens|threatened|deny|denies|denied|insist|insists|insisted)\b/i.test(safeText(verb)))score+=4;
+    if(/\b(?:i['’]?m|i am|i was|i did|i killed|i lied|i betrayed|i stole|i caused|my real name|i work for|i worked for|i joined|i left|i love|i hate|i trust|i don['’]?t trust|i know|i knew|i saw|i remember|i promise|i swear|i['’]?ll|i will|i won['’]?t|i refuse|i want to|i need to|i plan to|i['’]?m going to)\b/i.test(t))score+=3;
+    const tags=semanticTags(t);
+    if(tags.indexOf("@secret")>=0||tags.indexOf("@promise")>=0||tags.indexOf("@identity")>=0)score+=4;
+    if(tags.indexOf("@relationship")>=0||tags.indexOf("@status")>=0||tags.indexOf("@ability")>=0||tags.indexOf("@affiliation")>=0||tags.indexOf("@role")>=0)score+=3;
+    if(tags.indexOf("@item")>=0||tags.indexOf("@location")>=0||tags.indexOf("@organization")>=0)score+=2;
+    if(/\b(?:anchor key|dead hour|target|coordinates?|checkpoint|waypoint|rendezvous|deadline|attack|operation|evidence|proof|hidden|stored|located|midnight|dawn)\b/i.test(t))score+=2;
+    try{if(worldEntitiesMentioned(t).length)score+=2;}catch(_){}
+    if(/\b(?:never|always|forever|important|remember this|the truth|nobody knows|don['’]?t tell)\b/i.test(t))score+=2;
+    if(/\b(?:weather|food|coffee|tea|nice|good|bad|fine|okay|hello|good morning)\b/i.test(t)&&score<5)score-=2;
+    return score;
+  }
+
+  function characterRevealSubjectEvidence(text, charKey) {
+    const r=root(), ch=r&&r.chars?r.chars[charKey]:null; if(!ch)return false;
+    if(stateSlotsForCharacter(text,charKey).length)return true;
+    const a=aliasRegexSourceForCharacter(charKey); if(!a)return false;
+    const t=cleanText(text);
+    const direct=[
+      "(?:^|[^A-Za-z0-9])"+a+"(?:['’]s)?\\s+[^.!?]{0,26}\\b(?:is|was|has|had|became|becomes|remains|turned out to be|works? for|worked for|joined|left|betrayed|killed|murdered|hid|stole|owns?|possesses?)\\b",
+      "(?:^|[^A-Za-z0-9])"+a+"['’]s\\s+(?:real name|identity|secret|mother|father|mum|mom|dad|sister|brother|daughter|son|wife|husband|spouse|partner|power|ability|weakness|allergy|diagnosis|injury|job|role|allegiance)\\b",
+      "\\b(?:confirms?|confirmed|reveals?|revealed|proves?|proved|shows?|showed|discovers?|discovered|learns?|learned)\\b[^.!?]{0,90}(?:^|[^A-Za-z0-9])"+a+"\\s+(?:is|was|has|had|works?|worked|joined|left|killed|betrayed|owns?|possesses?)\\b"
+    ];
+    for(let i=0;i<direct.length;i++)if(new RegExp(direct[i],"i").test(t))return true;
+    return false;
+  }
+
+  function characterRevealScore(text, charKey, mode, imp) {
+    const t=cleanText(text); if(!t||mode==="question")return-99;
+    let score=Math.max(1,Number(imp)||1);
+    const slots=stateSlotsForCharacter(t,charKey);
+    if(slots.length)score+=4;
+    if(/\b(?:reveal(?:s|ed)?|discover(?:s|ed)?|learn(?:s|ed)? that|confirm(?:s|ed)?|prove(?:s|d)?|real name|identity|secret|confess(?:es|ed)?|betray(?:s|ed)?|actually\s+(?:is|was)|turns out|was responsible|killed|murdered|parent|mother|father|sister|brother|wife|husband|spouse|partner|pregnant|diagnos(?:ed|is)|power|ability|weakness|allergy|works? for|joined|left the|defect(?:s|ed)?)\b/i.test(t))score+=4;
+    if(mode==="claim"||mode==="belief"||mode==="uncertain")score-=1;
+    if(/\b(?:looks?|glances?|nods?|smiles?|shrugs?|steps?|walks?|sits?|stands?|breathes?|gaze|hand|eyes?)\b/i.test(t)&&!slots.length)score-=3;
+    return score;
+  }
+
+  function insightStatefulCategory(category) {
+    return /^(?:LOCATION|ROLE|STATUS|IDENTITY|ALLEGIANCE)$/.test(safeText(category));
+  }
+
+  function addCharacterInsight(subject, text, category, status, owners, turn, kind, src, score, speaker) {
+    const r=root(); if(!r||!subject||!r.chars[subject])return false;
+    const shown=displayText(text,EIDETIC_CONFIG.CHARACTER_INSIGHT_CHARS);
+    if(!shown||Number(score)<5)return false;
+    const cat=safeText(category)||"REVEAL", stat=safeText(status)||"FACT", sp=safeText(speaker)||"";
+    const fp=hash(subject+"|"+cat+"|"+stat+"|"+cleanText(shown).toLowerCase());
+    if((r.insights||[]).some(x=>x&&x.fp===fp))return false;
+    if(insightStatefulCategory(cat)){
+      for(let i=r.insights.length-1;i>=0;i--){
+        const old=r.insights[i]; if(!old||old.subject!==subject||old.category!==cat||old.superseded)continue;
+        old.superseded=true; old.supersededBy=fp; r.stats.characterInsightSupersessions=Number(r.stats.characterInsightSupersessions||0)+1; break;
+      }
+    }
+    r.insights.push({id:"ci"+(++r.seq),turn,subject,speaker:sp,category:cat,status:stat,text:shown,owners:Array.from(new Set(owners||[PLAYER])),kind,src,score:Number(score)||5,fp,origin:INGEST_ORIGIN,superseded:false});
+    if(r.insights.length>EIDETIC_CONFIG.CHARACTER_INSIGHT_LIMIT)r.insights.splice(0,r.insights.length-EIDETIC_CONFIG.CHARACTER_INSIGHT_LIMIT);
+    r.stats.characterInsights=Number(r.stats.characterInsights||0)+1;
+    r.runtime.insightSyncSig=""; r.runtime.recallCacheKey="";
+    return true;
+  }
+
+  function speechVerbPattern() {
+    return "(?:says?|said|tells?|told|replies?|replied|answers?|answered|admits?|admitted|confesses?|confessed|reveals?|revealed|explains?|explained|warns?|warned|promises?|promised|swears?|swore|vows?|vowed|insists?|insisted|denies|denied|threatens?|threatened|whispers?|whispered|shouts?|shouted|yells?|yelled|mutters?|muttered)";
+  }
+
+  function aliasRegexSourceForCharacter(charKey) {
+    const r=root(), ch=r&&r.chars?r.chars[charKey]:null; if(!ch)return"";
+    const forms=[ch.name].concat(ch.aliases||[]).map(x=>safeText(x).trim()).filter(Boolean).sort((a,b)=>b.length-a.length);
+    return forms.length?"(?:"+forms.map(escapeRe).join("|")+")":"";
+  }
+
+  function captureImportantDialogue(text, kind, turn, srcHash) {
+    const r=root(); if(!r)return 0;
+    let added=0; const keys=Object.keys(r.chars||{}), verb=speechVerbPattern();
+    for(let ki=0;ki<keys.length;ki++){
+      const key=keys[ki], a=aliasRegexSourceForCharacter(key); if(!a)continue;
+      const patterns=[
+        new RegExp("(?:^|[\\n.!?])\\s*"+a+"\\s+("+verb+")[^\\\"“]{0,60}[\\\"“]([^\\\"”\\n]{3,520})[\\\"”]","gi"),
+        new RegExp("[\\\"“]([^\\\"”\\n]{3,520})[\\\"”][^\\n.!?]{0,70}\\b"+a+"\\s+("+verb+")","gi"),
+        new RegExp("(?:^|[\\n])\\s*"+a+"\\s*:\\s*([^\\n]{3,420})","gi")
+      ];
+      for(let pi=0;pi<patterns.length;pi++){
+        let m; while((m=patterns[pi].exec(safeText(text)))!==null){
+          let quote, v;
+          if(pi===0){v=m[1];quote=m[2];} else if(pi===1){quote=m[1];v=m[2];} else {quote=m[1];v="speaker-label";}
+          quote=cleanText(quote); const score=importantSpeechScore(quote,v); if(score<5)continue;
+          const owners=ownerSetFor(m[0],kind); owners.add(key);
+          const cat=insightCategory(quote,true);
+          if(addCharacterInsight(key,quote,cat,"CLAIM",owners,turn,kind,srcHash+":speech:"+ki+":"+pi,score,key))added++;
+        }
+      }
+      // Reported speech without quotation marks, e.g. "Nadia admits she sabotaged it."
+      const reported=new RegExp("(?:^|[\\n.!?])\\s*("+a+")\\s+("+verb+")\\s+([^.!?]{5,320})[.!?]","gi");
+      let rm; while((rm=reported.exec(safeText(text)))!==null){
+        const statement=cleanText(rm[3]), score=importantSpeechScore(statement,rm[2]); if(score<6)continue;
+        const owners=ownerSetFor(rm[0],kind); owners.add(key);
+        if(addCharacterInsight(key,statement,insightCategory(statement,true),"CLAIM",owners,turn,kind,srcHash+":reported:"+ki,score,key))added++;
+      }
+    }
+    return added;
+  }
+
+  function captureCharacterReveals(text, owners, turn, kind, mode, imp, src) {
+    const r=root(); if(!r)return 0; const names=namesMentioned(text); if(!names.length)return 0;
+    let added=0;
+    for(let i=0;i<names.length;i++){
+      const key=names[i]; if(!r.chars[key])continue;
+      // If this sentence is plainly attributed speech, dialogue capture handles it as SAID/CLAIM.
+      const a=aliasRegexSourceForCharacter(key), verb=speechVerbPattern();
+      if(a && new RegExp("\\b"+a+"\\s+"+verb+"\\b","i").test(text))continue;
+      if(!characterRevealSubjectEvidence(text,key))continue;
+      const score=characterRevealScore(text,key,mode,imp); if(score<5)continue;
+      const status=evidenceState(text,mode);
+      const category=insightCategory(text,false);
+      if(addCharacterInsight(key,text,category,status,owners,turn,kind,src+":reveal:"+i,score,""))added++;
+    }
+    return added;
+  }
+
+  function stripInsightNotes(text) {
+    return stripManagedEntryBlock(text,EIDETIC_INSIGHT_NOTES_OPEN,EIDETIC_INSIGHT_NOTES_CLOSE);
+  }
+
+  function insightLine(x) {
+    const label=x.speaker?"SAID/"+safeText(x.status):safeText(x.status);
+    return "T"+x.turn+" ["+label+" • "+safeText(x.category)+"] "+displayText(x.text,EIDETIC_CONFIG.CHARACTER_INSIGHT_CHARS);
+  }
+
+  function characterInsightsForNotes(charKey,limit) {
+    const r=root(); if(!r)return[]; const out=[], seen=new Set(), max=limit||EIDETIC_CONFIG.CHARACTER_NOTE_INSIGHTS;
+    for(let i=r.insights.length-1;i>=0&&out.length<max;i--){
+      const x=r.insights[i]; if(!x||x.subject!==charKey||x.superseded||Number(x.score||0)<5)continue;
+      const stateKey=insightStatefulCategory(x.category)?x.category:"";
+      if(stateKey&&seen.has(stateKey))continue;
+      if(stateKey)seen.add(stateKey);
+      out.push(x);
+    }
+    return out;
+  }
+
+  function characterNotesAllowed() {
+    const r=root(); if(!r||!r.runtime)return false;
+    if(r.runtime.characterNotesPersistence!=="degraded")return true;
+    return currentTurn()>=Number(r.runtime.characterNotesRetryTurn||0);
+  }
+
+  function tryWriteCharacterInsightNotes(card, text) {
+    const r=root(); if(!card||typeof card!=="object"||!characterNotesAllowed())return false;
+    let ok=false;
+    try{card.description=text;ok=true;}catch(_){}
+    try{card.notes=text;ok=true;}catch(_){}
+    if(r&&r.runtime&&ok){
+      r.runtime.characterNoteExpected={id:card.id!=null?card.id:null,hash:hash(text),turn:currentTurn()};
+      r.runtime.characterNotesPersistence="pending";
+    }
+    return ok;
+  }
+
+  function verifyCharacterInsightNotesPersistence() {
+    const r=root(); if(!r||!r.runtime||!r.runtime.characterNoteExpected)return;
+    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return;
+    const ex=r.runtime.characterNoteExpected; if(currentTurn()<=Number(ex.turn||0))return;
+    let card=null;
+    if(ex.id!=null)card=storyCards.find(c=>c&&String(c.id)===String(ex.id))||null;
+    if(!card){r.runtime.characterNotesPersistence="degraded";r.runtime.characterNotesRetryTurn=currentTurn()+EIDETIC_CONFIG.STORY_CARD_RETRY_TURNS;r.runtime.characterNoteExpected=null;return;}
+    const got=safeText(card.description||card.notes);
+    if(hash(got)===safeText(ex.hash)){r.runtime.characterNotesPersistence="confirmed";}
+    else {r.runtime.characterNotesPersistence="degraded";r.runtime.characterNotesRetryTurn=currentTurn()+EIDETIC_CONFIG.STORY_CARD_RETRY_TURNS;}
+    r.runtime.characterNoteExpected=null;
+  }
+
+  function writeCharacterInsightNotes(charKey) {
+    const idx=findStoryCardForCharacter(charKey); if(idx<0||!storyCards[idx])return false;
+    const insights=characterInsightsForNotes(charKey,EIDETIC_CONFIG.CHARACTER_NOTE_INSIGHTS); if(!insights.length)return false;
+    const c=storyCards[idx], current=safeText(c.description||c.notes), base=stripInsightNotes(current);
+    const head=EIDETIC_INSIGHT_NOTES_OPEN+"\nIMPORTANT REVEALS / STATEMENTS FROM PLAYED CANON. SAID/CLAIM records what the character said; it is not automatically objective fact. Newer explicit evidence overrides stale entries.\n";
+    let lines=insights.map(insightLine), block="";
+    while(lines.length){
+      block=head+lines.join("\n")+"\n"+EIDETIC_INSIGHT_NOTES_CLOSE;
+      if(block.length<=EIDETIC_CONFIG.CHARACTER_NOTE_BLOCK_CHARS)break;
+      lines.pop();
+    }
+    if(!lines.length)return false;
+    const next=(base?base+"\n\n":"")+block;
+    if(current===next)return false;
+    if(!tryWriteCharacterInsightNotes(c,next))return false;
+    const r=root(); r.stats.characterInsightNotes=Number(r.stats.characterInsightNotes||0)+1; r.stats.cardNoteWrites=Number(r.stats.cardNoteWrites||0)+1;
+    return true;
+  }
+
+  function backfillCharacterInsightNotes(limit) {
+    const r=root(); if(!r||!Array.isArray(r.insights)||!r.insights.length)return 0;
+    const newest=Object.create(null);
+    for(let i=0;i<r.insights.length;i++){
+      const x=r.insights[i]; if(!x||x.superseded||!x.subject)continue;
+      newest[x.subject]=Math.max(Number(newest[x.subject]||-1),Number(x.turn||0));
+    }
+    const subjects=Object.keys(newest).sort((a,b)=>newest[b]-newest[a]);
+    let writes=0, max=Math.max(1,Number(limit)||12);
+    for(let i=0;i<subjects.length&&writes<max;i++){
+      if(findStoryCardForCharacter(subjects[i])<0)continue;
+      if(writeCharacterInsightNotes(subjects[i]))writes++;
+    }
+    if(r.runtime)r.runtime.insightBackfillSig=hash(subjects.join("|")+"|"+subjects.map(k=>newest[k]).join("|"));
+    return writes;
+  }
+
+  function migrateCharacterInsightsFromExistingMemory() {
+    const r=root(); if(!r||!r.runtime||r.runtime.insightMigrationDone)return 0;
+    if(!r.runtime.needsSchema17InsightMigration){r.runtime.insightMigrationDone=true;return 0;}
+    let added=0;
+    for(let i=0;i<(r.liveFacts||[]).length;i++){
+      const f=r.liveFacts[i]; if(!f)continue;
+      const before=(r.insights||[]).length;
+      const mode=safeText(f.mode)||"event";
+      captureImportantDialogue(f.text,f.kind||"output",Number(f.turn)||0,safeText(f.src)||"schema17-migration");
+      captureCharacterReveals(f.text,new Set(f.owners||[PLAYER]),Number(f.turn)||0,f.kind||"output",mode,importance(f.text),safeText(f.src)||"schema17-migration");
+      added+=(r.insights||[]).length-before;
+    }
+    r.runtime.needsSchema17InsightMigration=false; r.runtime.insightMigrationDone=true;
+    r.stats.characterInsightMigrations=Number(r.stats.characterInsightMigrations||0)+added;
+    if(added)r.runtime.insightSyncSig="";
+    return added;
+  }
+
+  function retrieveCharacterInsights(charKey, query, plan, activeKeys, limit) {
+    const r=root(); if(!r||!Array.isArray(r.insights)||!r.insights.length)return[];
+    const tokens=(plan&&plan.lexicalTokens)||tokenList(query,16), turn=currentTurn(), out=[];
+    const active=new Set(activeKeys||[]), directName=(plan&&plan.names||[]).indexOf(charKey)>=0;
+    for(let i=r.insights.length-1;i>=0;i--){
+      const x=r.insights[i]; if(!x||x.subject!==charKey)continue;
+      if(x.superseded && !(plan&&plan.temporal==="earliest"))continue;
+      // A character-specific PRIVATE section may only contain insight that character knows.
+      if(EIDETIC_CONFIG.STRICT_KNOWLEDGE && (x.owners||[]).indexOf(charKey)<0)continue;
+      let score=Number(x.score||5), overlaps=0; const low=cleanText(x.text).toLowerCase();
+      for(let j=0;j<tokens.length;j++)if(tokens[j]&&low.indexOf(tokens[j])>=0){score+=3;overlaps++;}
+      const age=Math.max(0,turn-Number(x.turn||0));
+      if(directName)score+=8;
+      if(active.has(charKey))score+=3;
+      if(age<=8)score+=3; else if(age>120)score-=2;
+      if(/^(?:PROMISE|CONFESSION|SECRET|IDENTITY|RELATIONSHIP|ALLEGIANCE|GOAL|BOUNDARY|THREAT)$/.test(x.category))score+=2;
+      if(plan&&(plan.explicitRecall||plan.directQuestion)&&tokens.length&&overlaps===0)continue;
+      if(plan&&(plan.explicitRecall||plan.directQuestion)&&!directName&&overlaps<2)continue;
+      if(!directName&&!active.has(charKey)&&overlaps===0)continue;
+      out.push({x,score,overlaps});
+    }
+    out.sort((a,b)=>b.score-a.score||Number(b.x.turn||0)-Number(a.x.turn||0));
+    return out.slice(0,Math.max(1,limit||EIDETIC_CONFIG.CHARACTER_INSIGHT_RECALL)).map(v=>v.x);
+  }
+
+  function retrieveNarrativeCharacterInsights(query, plan, limit, activeKeys) {
+    const r=root(); if(!r||!Array.isArray(r.insights)||!r.insights.length)return[];
+    const raw=cleanText(query).toLowerCase(), tokens=(plan&&plan.lexicalTokens)||tokenList(query,18), turn=currentTurn(), out=[];
+    const gate=Array.isArray(activeKeys)?activeKeys:[];
+    for(let i=r.insights.length-1;i>=0;i--){
+      const x=r.insights[i]; if(!x||x.superseded)continue;
+      if(EIDETIC_CONFIG.STRICT_KNOWLEDGE){
+        const owners=x.owners||[];
+        if(owners.indexOf(PLAYER)<0)continue;
+        let safe=true; for(let gi=0;gi<gate.length;gi++)if(owners.indexOf(gate[gi])<0){safe=false;break;}
+        if(!safe)continue;
+      }
+      const ch=r.chars&&r.chars[x.subject], forms=ch?[ch.name].concat(ch.aliases||[]):[];
+      let named=false; for(let fi=0;fi<forms.length;fi++){const n=normName(forms[fi]);if(n&&raw.indexOf(n)>=0){named=true;break;}}
+      let score=Number(x.score||5)+(named?9:0), overlaps=0; const low=cleanText(x.text).toLowerCase();
+      for(let j=0;j<tokens.length;j++)if(tokens[j]&&low.indexOf(tokens[j])>=0){score+=3;overlaps++;}
+      const age=Math.max(0,turn-Number(x.turn||0)); if(age<=8)score+=2; else if(age>180)score-=2;
+      if(/^(?:PROMISE|CONFESSION|SECRET|IDENTITY|RELATIONSHIP|ALLEGIANCE|GOAL|BOUNDARY|THREAT)$/.test(x.category))score+=2;
+      if(plan&&(plan.explicitRecall||plan.directQuestion)&&tokens.length&&overlaps===0)continue;
+      if(plan&&(plan.explicitRecall||plan.directQuestion)&&!named&&overlaps<2)continue;
+      if(!named&&overlaps===0)continue;
+      out.push({x,score});
+    }
+    out.sort((a,b)=>b.score-a.score||Number(b.x.turn||0)-Number(a.x.turn||0));
+    return out.slice(0,Math.max(1,limit||EIDETIC_CONFIG.CHARACTER_INSIGHT_RECALL)).map(v=>v.x);
+  }
+
   function findStoryCardForCharacter(charKey) {
     if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return -1;
     const r=root(), ch=r&&r.chars?r.chars[charKey]:null; if(!ch)return -1;
@@ -19547,23 +19878,24 @@ const EIDETIC = (() => {
   function syncLiveStoryCards(force){
     const r=root(); if(!r||typeof storyCards==="undefined"||!Array.isArray(storyCards))return;
     if(!cardSyncAllowed(!!force))return;
-    const t=currentTurn(), lf=r.liveFacts||[];
-    const last=lf.length?lf[lf.length-1]:null;
-    const sig=lf.length+"|"+(last?(last.fp||last.id||""):"")+"|"+(last?Number(last.turn||0):0);
-    if(!force && r.runtime.liveSyncSig===sig)return;
+    const t=currentTurn(), lf=r.liveFacts||[], ins=r.insights||[];
+    const last=lf.length?lf[lf.length-1]:null, lastI=ins.length?ins[ins.length-1]:null;
+    const sig=lf.length+"|"+(last?(last.fp||last.id||""):"")+"|"+ins.length+"|"+(lastI?(lastI.fp||lastI.id||""):"");
+    if(!force && r.runtime.liveSyncSig===sig && r.runtime.insightSyncSig===sig)return;
     const touched=new Set();
     for(let i=Math.max(0,lf.length-18);i<lf.length;i++){
-      const f=lf[i]||{};
-      if(Number(f.turn||0)<t-2)continue;
-      (f.names||[]).forEach(k=>touched.add(k));
+      const f=lf[i]||{}; if(Number(f.turn||0)<t-2)continue; (f.names||[]).forEach(k=>touched.add(k));
     }
-    touched.forEach(k=>writeCharacterLiveNotes(k));
+    for(let i=Math.max(0,ins.length-18);i<ins.length;i++){
+      const x=ins[i]||{}; if(Number(x.turn||0)<t-3)continue; if(x.subject)touched.add(x.subject);
+    }
+    touched.forEach(k=>{writeCharacterLiveNotes(k);writeCharacterInsightNotes(k);});
     syncCurrentContinuityCard();
-    r.runtime.liveSyncTurn=t; r.runtime.liveSyncSig=sig;
+    r.runtime.liveSyncTurn=t; r.runtime.liveSyncSig=sig; r.runtime.insightSyncSig=sig;
   }
 
   function seedFromStoryCards() {
-    if (typeof storyCards === "undefined" || !Array.isArray(storyCards)) return;
+    if (typeof storyCards === "undefined" || !Array.isArray(storyCards)) return false;
     const r = root();
     const sigParts = [];
     for (let i = 0; i < storyCards.length; i++) {
@@ -19574,7 +19906,7 @@ const EIDETIC = (() => {
       sigParts.push(safeText(c.id) + "|" + type + "|" + safeText(c.title) + "|" + safeText(c.keys) + "|" + entryForSig);
     }
     const sig = hash(sigParts.join("\u001e"));
-    if (r && r.runtime && r.runtime.storyCardSig === sig) return;
+    if (r && r.runtime && r.runtime.storyCardSig === sig) return false;
     for (let i = 0; i < storyCards.length; i++) {
       const c = storyCards[i] || {};
       const type = safeText(c.type).toLowerCase();
@@ -19604,6 +19936,7 @@ const EIDETIC = (() => {
       if (entryIdentity) addAliasToCharacter(charKey, entryIdentity, "story-card-entry");
     }
     if (r && r.runtime) r.runtime.storyCardSig = sig;
+    return true;
   }
 
   function candidateNamesFromText(text) {
@@ -20814,15 +21147,17 @@ const EIDETIC = (() => {
     const lastTurn = r.last && Number.isFinite(r.last.turn) ? r.last.turn : null;
     if (lastTurn != null && turn >= lastTurn) return;
 
-    const before = r.hot.length + r.cold.length + r.anchors.length + r.ledger.length + (r.world ? r.world.facts.length + r.world.timeline.length : 0);
+    const before = r.hot.length + r.cold.length + r.anchors.length + r.ledger.length + (r.insights||[]).length + (r.world ? r.world.facts.length + r.world.timeline.length : 0);
     r.hot = r.hot.filter(e => (e.turn || 0) <= turn || e.manual);
     r.cold = r.cold.filter(e => recTurn(e) <= turn || recManual(e));
     r.anchors = r.anchors.filter(e => (e.turn || 0) <= turn || e.manual);
     r.ledger = r.ledger.filter(e => (Number(e && e.turn) || 0) <= turn || (e && e.manual));
+    r.insights = (r.insights||[]).filter(e => (Number(e && e.turn) || 0) <= turn || (e && e.manual));
+    if(r.runtime)r.runtime.insightSyncSig="";
     if (r.world) { r.world.facts = r.world.facts.filter(e => (Number(e&&e.turn)||0) <= turn || (e&&e.manual)); r.world.timeline = r.world.timeline.filter(e => (Number(e&&e.turn)||0) <= turn || (e&&e.manual)); recomputeWorldClock(); }
     const sceneKeys = Object.keys(r.scene);
     for (let i = 0; i < sceneKeys.length; i++) if (r.scene[sceneKeys[i]] > turn) delete r.scene[sceneKeys[i]];
-    const after = r.hot.length + r.cold.length + r.anchors.length + r.ledger.length + (r.world ? r.world.facts.length + r.world.timeline.length : 0);
+    const after = r.hot.length + r.cold.length + r.anchors.length + r.ledger.length + (r.insights||[]).length + (r.world ? r.world.facts.length + r.world.timeline.length : 0);
     if (after < before) r.stats.undos = (r.stats.undos || 0) + 1;
     if ((r.last.outputTurn || -1) > turn) { r.last.outputTurn = -1; r.last.outputHash = ""; }
     if ((r.last.inputTurn || -1) > turn) { r.last.inputTurn = -1; r.last.inputHash = ""; }
@@ -20880,7 +21215,12 @@ const EIDETIC = (() => {
       if(et<turn)break;
       if(e&&et===turn&&e.kind===kind){r.liveFacts.splice(i,1);removed++;}
     }
-    if(r.runtime)r.runtime.liveSyncSig="";
+    for (let i = (r.insights||[]).length - 1; i >= 0; i--) {
+      const e=r.insights[i], et=Number(e&&e.turn)||0;
+      if(et<turn)break;
+      if(e&&et===turn&&e.kind===kind){r.insights.splice(i,1);removed++;}
+    }
+    if(r.runtime){r.runtime.liveSyncSig="";r.runtime.insightSyncSig="";}
     if (r.world) {
       for (let i=r.world.facts.length-1;i>=0;i--) { const e=r.world.facts[i], et=Number(e&&e.turn)||0; if(et<turn)break; if(e&&!e.manual&&et===turn&&e.kind===kind){r.world.facts.splice(i,1);removed++;} }
       for (let i=r.world.timeline.length-1;i>=0;i--) { const e=r.world.timeline[i], et=Number(e&&e.turn)||0; if(et<turn)break; if(e&&!e.manual&&et===turn&&e.kind===kind){r.world.timeline.splice(i,1);removed++;} }
@@ -20924,6 +21264,7 @@ const EIDETIC = (() => {
     if (!r) return;
     const turn = currentTurn();
     const liveBefore=(r.liveFacts||[]).length+"|"+((r.liveFacts||[]).length?((r.liveFacts[r.liveFacts.length-1].fp)||""):"");
+    const insightBefore=(r.insights||[]).length+"|"+((r.insights||[]).length?((r.insights[r.insights.length-1].fp)||""):"");
     rollbackFuture(turn);
     const cleaned = cleanText(text);
     if (!cleaned) return;
@@ -20941,6 +21282,7 @@ const EIDETIC = (() => {
     const replacement = replaceSameTurnKind(turn, kind, srcHash);
     if (replacement.sameHash || replacement.priorHashes.length) r.stats.retries = (r.stats.retries || 0) + (replacement.priorHashes.length ? 1 : 0);
 
+    captureImportantDialogue(cleaned, kind, turn, srcHash);
     const chunks = chunkText(cleaned);
     let previousStored = null;
     for (let i = 0; i < chunks.length; i++) {
@@ -20959,6 +21301,7 @@ const EIDETIC = (() => {
       applyTemporalMarkers(c, owners, turn, kind, srcHash + ":" + i);
       addWorldMemory(c, owners, turn, kind, srcHash + ":" + i, mode);
       addLiveFact(c, owners, turn, kind, mode, imp, srcHash + ":" + i);
+      captureCharacterReveals(c, owners, turn, kind, mode, imp, srcHash + ":" + i);
 
       const repeated = suppressExactRepeat(c, kind, ownerArray, mode, imp);
       if (!repeated) {
@@ -20999,7 +21342,8 @@ const EIDETIC = (() => {
     if (kind === "input") { r.last.inputHash = srcHash; r.last.inputTurn = turn; }
     if (kind === "output") { r.last.outputHash = srcHash; r.last.outputTurn = turn; }
     const liveAfter=(r.liveFacts||[]).length+"|"+((r.liveFacts||[]).length?((r.liveFacts[r.liveFacts.length-1].fp)||""):"");
-    if (INGEST_ORIGIN !== "bootstrap" && liveAfter!==liveBefore) syncLiveStoryCards(true);
+    const insightAfter=(r.insights||[]).length+"|"+((r.insights||[]).length?((r.insights[r.insights.length-1].fp)||""):"");
+    if (INGEST_ORIGIN !== "bootstrap" && (liveAfter!==liveBefore || insightAfter!==insightBefore)) syncLiveStoryCards(true);
   }
 
   function eventOwnerAllows(e, charKey) {
@@ -21525,7 +21869,7 @@ const EIDETIC = (() => {
     }
     const sceneSig = Object.keys(r.scene || {}).sort().map(k => k + ":" + r.scene[k]).join(",");
     const focusSig = (r.manualFocus || []).join(",");
-    const cacheKey = hash([turn, r.seq || 0, query, budget, sceneSig, focusSig, Object.keys(r.chars || {}).length, r.world ? Object.keys(r.world.entities||{}).length : 0, r.world ? (r.world.facts||[]).length : 0, r.world ? currentStoryHours() : 0, r.liveFacts ? r.liveFacts.length : 0, r.liveFacts && r.liveFacts.length ? r.liveFacts[r.liveFacts.length-1].fp : ""].join("|"));
+    const cacheKey = hash([turn, r.seq || 0, query, budget, sceneSig, focusSig, Object.keys(r.chars || {}).length, r.world ? Object.keys(r.world.entities||{}).length : 0, r.world ? (r.world.facts||[]).length : 0, r.world ? currentStoryHours() : 0, r.liveFacts ? r.liveFacts.length : 0, r.liveFacts && r.liveFacts.length ? r.liveFacts[r.liveFacts.length-1].fp : "", r.insights ? r.insights.length : 0, r.insights && r.insights.length ? r.insights[r.insights.length-1].fp : ""].join("|"));
     if (r.runtime.recallCacheKey === cacheKey) return r.runtime.recallCacheBlock || "";
 
     const active = activeCharacters(query, plan);
@@ -21547,7 +21891,10 @@ const EIDETIC = (() => {
       const got = retrieveForCharacter(key, query);
       const records = combinedRecallRecords(got);
       const stateFacts = retrieveCurrentState(key, got.plan || plan, EIDETIC_CONFIG.STATE_FACTS_PER_CHARACTER);
-      const noVerifiedMemory = !records.length && !stateFacts.length;
+      let insights = retrieveCharacterInsights(key, query, got.plan || plan, active, EIDETIC_CONFIG.CHARACTER_INSIGHT_RECALL);
+      const liveTextSet=new Set(liveNow.map(f=>cleanText(f.text).toLowerCase()));
+      insights=insights.filter(x=>!liveTextSet.has(cleanText(x.text).toLowerCase()));
+      const noVerifiedMemory = !records.length && !stateFacts.length && !insights.length;
       if (noVerifiedMemory && !seeds.some(s => s.key === key)) {
         if (plan.explicitRecall && EIDETIC_CONFIG.ABSTAIN_ON_EXPLICIT_RECALL_MISS) body.push(ch.name.toUpperCase() + " — PRIVATE CONTINUITY: no verified matching memory found; do not invent one.");
         continue;
@@ -21558,6 +21905,11 @@ const EIDETIC = (() => {
         const sf = stateFacts[sj];
         body.push("• CURRENT KNOWN " + safeText(sf.slot).toUpperCase() + " T" + sf.turn + ": " + displayText(sf.text, 245));
       }
+      for (let ij=0;ij<insights.length;ij++) {
+        const ix=insights[ij];
+        body.push("• IMPORTANT T"+ix.turn+" ["+(ix.speaker?"SAID/":"")+safeText(ix.status)+" • "+safeText(ix.category)+"]: "+displayText(ix.text,230));
+        r.stats.characterInsightRecalls=Number(r.stats.characterInsightRecalls||0)+1;
+      }
       for (let j = 0; j < records.length; j++) {
         const rec = records[j];
         const e = rec.e;
@@ -21566,6 +21918,16 @@ const EIDETIC = (() => {
       if (plan.explicitRecall && noVerifiedMemory) {
         const seed = seeds.find(s => s.key === key);
         if (seed) body.push("• ESTABLISHED IDENTITY ONLY (not evidence of the requested past event): " + displayText(seed.text, 190));
+      }
+    }
+
+    const narrativeInsights=retrieveNarrativeCharacterInsights(query,plan,EIDETIC_CONFIG.CHARACTER_INSIGHT_RECALL,active);
+    if(narrativeInsights.length){
+      body.push("NARRATIVE IMPORTANT CHARACTER CONTINUITY (player/narrator-known; do not grant this knowledge to an NPC unless their own PRIVATE CONTINUITY also contains it):");
+      for(let ni=0;ni<narrativeInsights.length;ni++){
+        const ix=narrativeInsights[ni], ch=r.chars&&r.chars[ix.subject];
+        body.push("• "+safeText(ch&&ch.name||ix.subject)+" T"+ix.turn+" ["+(ix.speaker?"SAID/":"")+safeText(ix.status)+" • "+safeText(ix.category)+"]: "+displayText(ix.text,230));
+        r.stats.characterInsightRecalls=Number(r.stats.characterInsightRecalls||0)+1;
       }
     }
 
@@ -21615,7 +21977,7 @@ const EIDETIC = (() => {
     lines.push("AUTHORITATIVE MEMORY REVISION " + rev + ". Ignore every older EIDETIC_RECALL block with a lower revision; optimized-context caching may leave old blocks visible.");
     lines.push("These are past records, not new events. Do not quote, expose, or mention this control block. Memory never authorizes dialogue, thoughts, decisions or voluntary actions for a player-controlled character.");
     lines.push("PRIVATE CONTINUITY belongs only to that character. A character merely mentioned as a subject did not automatically witness the event.");
-    lines.push("Evidence labels matter: SAID/CLAIMED, BELIEVED/SUSPECTED and UNCERTAIN are not established objective facts. Preserve uncertainty.");
+    lines.push("Evidence labels matter: SAID/CLAIMED, BELIEVED/SUSPECTED and UNCERTAIN are not established objective facts. IMPORTANT statements preserve what a character said or revealed; implement promises, goals, boundaries and knowledge when relevant without treating every claim as true.");
     lines.push("If records conflict, prefer ESTABLISHED/manual anchors and newer explicit events. Do not invent missing memories.");
     lines.push(payload);
     lines.push(CLOSE);
@@ -21795,14 +22157,18 @@ const EIDETIC = (() => {
 
     if (cmd === "eidetic" || cmd === "memory") {
       const chars = Object.keys(r.chars).length;
-      setMessage("EIDETIC • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • " + r.ledger.length + " current-state facts • " + (r.liveFacts||[]).length + " live continuity facts • " + (r.world ? Object.keys(r.world.entities||{}).length : 0) + " world entities • " + (r.world ? r.world.timeline.length : 0) + " timeline events • existing-history import " + Number(r.runtime.bootstrapImported || 0) + " actions • turn " + currentTurn());
+      setMessage("EIDETIC • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • " + r.ledger.length + " current-state facts • " + (r.liveFacts||[]).length + " live continuity facts • " + (r.insights||[]).length + " character insights • " + (r.world ? Object.keys(r.world.entities||{}).length : 0) + " world entities • " + (r.world ? r.world.timeline.length : 0) + " timeline events • existing-history import " + Number(r.runtime.bootstrapImported || 0) + " actions • turn " + currentTurn());
       return finishCommand(cmd);
     }
 
     if (cmd === "live") {
       syncLiveStoryCards(true);
-      const lf=(r.liveFacts||[]).slice(-8);
-      setMessage("EIDETIC live continuity: "+(r.liveFacts||[]).length+" durable facts • "+Number(r.stats.cardEntryWrites||0)+" character-entry writes • "+Number(r.stats.liveCardWrites||0)+" continuity-card writes • "+Number(r.stats.liveRecallInjects||0)+" live-recall injections • card sync "+safeText(r.runtime.cardPersistence||"unknown")+(Number(r.runtime.cardWriteFailures||0)?" ("+Number(r.runtime.cardWriteFailures||0)+" failed persistence checks)":"")+(lf.length?" • latest: "+lf.map(liveFactLine).join(" • "):""));
+      const lf=(r.liveFacts||[]).slice(-6), ix=(r.insights||[]).filter(x=>x&&!x.superseded).slice(-4);
+      let liveMsg="EIDETIC live continuity: "+(r.liveFacts||[]).length+" durable facts • "+(r.insights||[]).length+" character insights • "+Number(r.stats.characterInsightNotes||0)+" character-Notes mirrors • "+Number(r.stats.characterInsightRecalls||0)+" insight recalls • "+Number(r.stats.cardEntryWrites||0)+" character-entry writes • "+Number(r.stats.liveCardWrites||0)+" continuity-card writes • "+Number(r.stats.liveRecallInjects||0)+" live-recall injections • card sync "+safeText(r.runtime.cardPersistence||"unknown")+" • Notes sync "+safeText(r.runtime.characterNotesPersistence||"unknown");
+      if(Number(r.runtime.cardWriteFailures||0))liveMsg+=" ("+Number(r.runtime.cardWriteFailures||0)+" failed persistence checks)";
+      if(ix.length)liveMsg+=" • important: "+ix.map(insightLine).join(" • ");
+      else if(lf.length)liveMsg+=" • latest: "+lf.map(liveFactLine).join(" • ");
+      setMessage(liveMsg);
       return finishCommand(cmd);
     }
 
@@ -21982,13 +22348,21 @@ const EIDETIC = (() => {
     const r = root();
     if (!r) return;
     verifyStoryCardPersistence();
+    verifyCharacterInsightNotesPersistence();
     seedPlayerIdentity();
     seedConfiguredCharacters();
     applyConfigCard();
-    seedFromStoryCards();
+    const storyCardsChanged=seedFromStoryCards();
     importManagedContinuityFromStoryCards();
     cleanupLegacyManagedCharacterCards(4);
+    const insightMigrated=migrateCharacterInsightsFromExistingMemory();
     seedWorldEntitiesFromStoryCards();
+    if(insightMigrated)syncLiveStoryCards(true);
+    // If a Character Story Card is added after the reveal happened, backfill its Notes
+    // from the structured ledger. Also periodically retry the Notes mirror when a client
+    // failed to persist direct description/notes mutation; the ledger remains authoritative.
+    if(storyCardsChanged)backfillCharacterInsightNotes(12);
+    if(r.runtime&&r.runtime.characterNotesPersistence==="degraded"&&currentTurn()>=Number(r.runtime.characterNotesRetryTurn||0))backfillCharacterInsightNotes(3);
     const imported = bootstrapExistingHistory();
     announceActivation(imported);
     rollbackFuture(currentTurn());
@@ -22118,6 +22492,14 @@ const EIDETIC = (() => {
     ownerSetFor: ownerSetFor,
     recOrigin: recOrigin,
     relevantLiveContinuity: relevantLiveContinuity,
+    addCharacterInsight: addCharacterInsight,
+    captureImportantDialogue: captureImportantDialogue,
+    captureCharacterReveals: captureCharacterReveals,
+    retrieveCharacterInsights: retrieveCharacterInsights,
+    retrieveNarrativeCharacterInsights: retrieveNarrativeCharacterInsights,
+    characterInsightsForNotes: characterInsightsForNotes,
+    writeCharacterInsightNotes: writeCharacterInsightNotes,
+    backfillCharacterInsightNotes: backfillCharacterInsightNotes,
     persistStoryCard: persistStoryCard,
     stripCommandArtifactsFromContext: stripCommandArtifactsFromContext,
     cardSyncAllowed: cardSyncAllowed,

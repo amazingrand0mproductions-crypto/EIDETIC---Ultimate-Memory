@@ -760,3 +760,78 @@ instead of blindly preserving old noise.
 
 These changes are generic; the test Scenarios used to expose failures are not encoded in
 the engine.
+
+
+## Schema 17 — Character Insight Ledger
+
+EIDETIC now separates **important character continuity** from ordinary episodic memory.
+A character looking at a door, taking a step or saying throwaway dialogue should not occupy
+the same durable slot as a confession, promise, secret, allegiance change or major reveal.
+
+### Two-layer design
+
+**1. Structured Character Insight Ledger — functional memory**
+
+Important character information is stored in `state.__EIDETIC.insights` with structured
+metadata: subject, speaker, category, evidence status, who knows it, source turn, importance
+and supersession state. This is the authoritative layer used by recall.
+
+**2. Character Story Card Notes — human-readable mirror**
+
+When a matching Character Story Card exists, EIDETIC appends a bounded managed Notes block:
+`[[EIDETIC IMPORTANT CHARACTER CONTINUITY]]`. Existing author-written Notes are preserved.
+The block shows the most useful current/relevant character insights rather than every scene
+action.
+
+This hybrid matters because Story Card Notes are useful for inspection but are not a safe
+place to put the engine's only copy of memory. If a client does not persist a direct Notes
+mutation, the structured ledger still recalls the information through Front Memory.
+
+### What can become a Character Insight
+
+Examples include:
+- confessions and admissions;
+- promises, vows and meaningful threats;
+- secrets and hidden history;
+- identity/codename reveals;
+- relationship and family revelations;
+- allegiance, employer or faction changes;
+- abilities, weaknesses and lasting medical/status changes;
+- durable goals, plans and personal boundaries;
+- important operational information, evidence, locations, keys, deadlines or targets;
+- major narrator-established facts about the character.
+
+Trivial chatter, poses, glances, routine movement and atmospheric description are rejected.
+
+### Claims remain claims
+
+If Nadia says `Mara betrayed the unit`, EIDETIC may record:
+- on Nadia: an important statement she made;
+- on Mara: a **CLAIM** about Mara.
+
+It does **not** silently turn the allegation into objective fact. Narrator-confirmed evidence
+can later supersede or confirm it.
+
+### Relevance and implementation
+
+The ledger is retrieved when it matters rather than dumped into every turn. A promise about
+a bridge can return when the bridge becomes relevant. A hidden allegiance can return when
+that character/faction becomes relevant. Important active-character information receives a
+small priority boost, while unrelated old revelations stay out of context.
+
+Strict Knowledge still applies: an NPC does not gain a secret merely because the player or
+another character knows it.
+
+### Supersession
+
+State-like insights such as status, location, role, identity and allegiance are superseded
+by newer explicit evidence. Historical versions remain in the archive, but the active Notes
+mirror shows the current version instead of presenting two contradictory states as equally
+current.
+
+### Late-added Character Cards
+
+If an important reveal happens before a Character Story Card exists, EIDETIC keeps it in the
+ledger. If a matching Character card is added later, Schema 17 backfills the managed Notes
+block automatically.
+
