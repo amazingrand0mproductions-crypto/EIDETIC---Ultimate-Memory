@@ -80,17 +80,25 @@ const EIDETIC_CONFIG = {
 
   DEBUG: false,
 
-  // Durable live-continuity sync. Managed blocks are appended to Story Card Entry text.
-  // Notes are not used as AI context by AI Dungeon's scripting API.
-  SYNC_STORY_CARD_NOTES: true, // legacy compatibility name; now means managed Entry sync
-  SYNC_STORY_CARD_ENTRIES: true,
-  AUTO_CURRENT_CONTINUITY_CARD: true,
+  // Story Card integration is deliberately clutter-light. EIDETIC never needs a global
+  // "Current Played Continuity" card. Important character insights are mirrored to Notes
+  // when the client preserves that metadata; structured internal memory remains authoritative.
+  SYNC_STORY_CARD_NOTES: true,
+  SYNC_STORY_CARD_ENTRIES: false,
+  AUTO_CURRENT_CONTINUITY_CARD: false,
   CURRENT_CONTINUITY_KEY: "%__EIDETIC_CURRENT_7D4B__%",
   LIVE_FACT_LIMIT: 180,
   LIVE_FACT_CHARS: 220,
   CARD_NOTE_FACTS: 2,
   CURRENT_CARD_FACTS: 8,
-  LIVE_RECALL_FACTS: 3,
+  LIVE_RECALL_FACTS: 4,
+
+  // Scenario-authored moving-state Story Cards may be read internally even when they have
+  // no trigger keys. They are never rewritten or duplicated by EIDETIC.
+  CURRENT_CARD_SEED_LIMIT: 2,
+  CURRENT_CARD_SEED_CHARS: 300,
+  CURRENT_CARD_SEED_SCAN_INTERVAL: 6,
+  STORY_CARD_SCAN_INTERVAL: 6,
 
   // Character Insight Ledger: major revelations + important statements.
   CHARACTER_INSIGHT_LIMIT: 900,
@@ -110,7 +118,7 @@ const EIDETIC_CONFIG = {
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 17;
+  const SCHEMA_REVISION = 18;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -18062,6 +18070,7 @@ const EIDETIC = (() => {
     [5, /\b(married|wedding|divorced|pregnant|pregnancy|born|gave birth|adopted)\b/i],
     [5, /\b(secret|classified|password|passphrase|access code|launch code|override code|security code|confess(?:ed|ion)?|reveal(?:ed)?|identity|real name|truth is|betray(?:ed|al)?)\b/i],
     [5, /\b(promise(?:s|d)?|swear(?:s)?|swore|vow(?:s|ed)?|oath|deal|agreement|owe(?:s|d)?|debt)\b/i],
+    [5, /\b(worldship|planet[- ]sized (?:ship|vessel|construct)|invasion|first contact|hidden (?:alien |monitoring )?(?:ship|vessel)|secretly monitor(?:s|ed|ing)?|destination (?:is|was) earth|headed? (?:for|toward|towards) earth|hostile (?:fleet|ship|vessel|civilization|civilisation|species))\b/i],
     [4, /\b(love(?:s|d)?|hate(?:s|d)?|kiss(?:ed|es)?|break up|broke up|dating|partner|girlfriend|boyfriend|wife|husband|spouse|engaged|engagement)\b/i],
     [4, /\b(mother|father|mom|mum|dad|sister|brother|aunt|uncle|cousin|grandmother|grandfather|daughter|son|family)\b/i],
     [4, /\b(weakness|allergy|diagnosed|lost (?:his|her|their|a|the)? ?(?:power|ability)|gained (?:a|the)? ?(?:power|ability)|developed (?:a|the)? ?(?:power|ability)|power awakened|ability awakened)\b/i],
@@ -18090,9 +18099,9 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null, configNotesPersistence: "unknown", needsSchema16CardCleanup: false, managedCardCleanupIndex: 0, managedCardImportDone: false, needsSchema17InsightMigration: false, insightMigrationDone: false, insightSyncSig: "", characterNotesPersistence: "unknown", characterNotesRetryTurn: 0, characterNoteExpected: null },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", storyCardQuickSig: "", storyCardScanTurn: -1, storyCardCount: -1, worldCardQuickSig: "", worldCardScanTurn: -1, worldCardCount: -1, currentCardSeedSig: "", currentCardSeedQuickSig: "", currentCardSeeds: [], currentCardSeedScanTurn: -1, currentCardSeedCardCount: -1, bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null, configNotesPersistence: "unknown", needsSchema16CardCleanup: false, managedCardCleanupIndex: 0, managedCardImportDone: false, needsSchema17InsightMigration: false, insightMigrationDone: false, insightSyncSig: "", needsSchema18CardCleanup: false, liveDashboardRemoved: false, characterNotesPersistence: "unknown", characterNotesRetryTurn: 0, characterNoteExpected: null },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
-      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0, characterInsights: 0, characterInsightNotes: 0, characterInsightRecalls: 0, characterInsightMigrations: 0, characterInsightSupersessions: 0 },
+      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0, characterInsights: 0, characterInsightNotes: 0, characterInsightRecalls: 0, characterInsightMigrations: 0, characterInsightSupersessions: 0, liveDashboardRemovals: 0, currentCardSeedScans: 0, currentCardSeedRecalls: 0, liveFactSupersessions: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
     };
   }
@@ -18128,6 +18137,12 @@ const EIDETIC = (() => {
     if (typeof r.runtime.recallCacheKey !== "string") r.runtime.recallCacheKey = "";
     if (typeof r.runtime.recallCacheBlock !== "string") r.runtime.recallCacheBlock = "";
     if (typeof r.runtime.storyCardSig !== "string") r.runtime.storyCardSig = "";
+    if (typeof r.runtime.storyCardQuickSig !== "string") r.runtime.storyCardQuickSig = "";
+    if (typeof r.runtime.worldCardQuickSig !== "string") r.runtime.worldCardQuickSig = "";
+    if (!Number.isFinite(r.runtime.storyCardScanTurn)) r.runtime.storyCardScanTurn = -1;
+    if (!Number.isFinite(r.runtime.storyCardCount)) r.runtime.storyCardCount = -1;
+    if (!Number.isFinite(r.runtime.worldCardScanTurn)) r.runtime.worldCardScanTurn = -1;
+    if (!Number.isFinite(r.runtime.worldCardCount)) r.runtime.worldCardCount = -1;
     if (typeof r.runtime.configGuideSig !== "string") r.runtime.configGuideSig = "";
     if (typeof r.runtime.configCardMode !== "string") r.runtime.configCardMode = "";
     if (typeof r.runtime.configProbePending !== "boolean") r.runtime.configProbePending = false;
@@ -18139,6 +18154,13 @@ const EIDETIC = (() => {
     if (typeof r.runtime.needsSchema17InsightMigration !== "boolean") r.runtime.needsSchema17InsightMigration = false;
     if (typeof r.runtime.insightMigrationDone !== "boolean") r.runtime.insightMigrationDone = false;
     if (typeof r.runtime.insightSyncSig !== "string") r.runtime.insightSyncSig = "";
+    if (typeof r.runtime.currentCardSeedSig !== "string") r.runtime.currentCardSeedSig = "";
+    if (typeof r.runtime.currentCardSeedQuickSig !== "string") r.runtime.currentCardSeedQuickSig = "";
+    if (!Array.isArray(r.runtime.currentCardSeeds)) r.runtime.currentCardSeeds = [];
+    if (!Number.isFinite(r.runtime.currentCardSeedScanTurn)) r.runtime.currentCardSeedScanTurn = -1;
+    if (!Number.isFinite(r.runtime.currentCardSeedCardCount)) r.runtime.currentCardSeedCardCount = -1;
+    if (typeof r.runtime.needsSchema18CardCleanup !== "boolean") r.runtime.needsSchema18CardCleanup = false;
+    if (typeof r.runtime.liveDashboardRemoved !== "boolean") r.runtime.liveDashboardRemoved = false;
     if (typeof r.runtime.characterNotesPersistence !== "string") r.runtime.characterNotesPersistence = "unknown";
     if (!Number.isFinite(r.runtime.characterNotesRetryTurn)) r.runtime.characterNotesRetryTurn = 0;
     if (!("characterNoteExpected" in r.runtime)) r.runtime.characterNoteExpected = null;
@@ -18175,6 +18197,37 @@ const EIDETIC = (() => {
       r.runtime.needsSchema17InsightMigration = true;
       r.runtime.insightMigrationDone = false;
       r.runtime.insightSyncSig = "";
+    }
+    if (previousSchema > 0 && previousSchema < 18) {
+      r.runtime.needsSchema18CardCleanup = true;
+      r.runtime.liveDashboardRemoved = false;
+      r.runtime.currentCardSeedSig = "";
+      r.runtime.currentCardSeedQuickSig = "";
+      r.runtime.storyCardQuickSig = "";
+      r.runtime.worldCardQuickSig = "";
+      r.runtime.currentCardSeeds = [];
+      r.runtime.currentCardSeedScanTurn = -1;
+      r.runtime.currentCardSeedCardCount = -1;
+      r.runtime.storyCardScanTurn = -1;
+      r.runtime.storyCardCount = -1;
+      r.runtime.worldCardScanTurn = -1;
+      r.runtime.worldCardCount = -1;
+      r.runtime.liveSyncSig = "";
+      // Re-score legacy live facts with Schema 18 durability rules so old stance/dialogue
+      // noise cannot survive forever merely because an earlier schema stored it.
+      r.liveFacts=(r.liveFacts||[]).filter(f=>{
+        if(!f)return false;
+        try{delete f.cardScore16;delete f.cardScore18;delete f.priority18;}catch(_){}
+        f.facet=liveFactFacet(f); f.priority18=liveFactPriority(f);
+        return liveFactCardEligible(f);
+      });
+      // Collapse legacy duplicate destination/course lines into the newest confirmed state.
+      let latestCourse=null;
+      for(let li=0;li<r.liveFacts.length;li++){
+        const f=r.liveFacts[li]; if(!f||f.superseded||liveFactFacet(f)!=="mission-course")continue;
+        if(latestCourse&&latestCourse!==f){latestCourse.superseded=true;latestCourse.supersededBy=f.id||"schema18-migration";r.stats.liveFactSupersessions=Number(r.stats.liveFactSupersessions||0)+1;}
+        latestCourse=f;
+      }
     }
     const needsColdPacking = r.cold.some(x => x && !Array.isArray(x));
     if (needsSchemaMigration || needsColdPacking || Object.prototype.hasOwnProperty.call(r, "v")) {
@@ -18934,6 +18987,8 @@ const EIDETIC = (() => {
       "🧠 EIDETIC — CONFIG GUIDE",
       "",
       "EIDETIC works automatically. You do not need commands, a setup card, or a character list.",
+      "EIDETIC creates only this Config Story Card. It does NOT create a separate Current Played Continuity card; moving continuity stays in internal memory/Front Memory so your Story Card list stays clean.",
+      "Important character revelations may be mirrored into that character card's Notes when the client permits it. The structured Character Insight Ledger remains authoritative even if Notes metadata is unavailable.",
       "The Entry contains only editable settings. This Notes section explains every option. Change only the value after = and keep the setting names unchanged.",
       "",
       "⚙️ MAIN OPTIONS",
@@ -19021,7 +19076,7 @@ const EIDETIC = (() => {
       "/focus auto — return to automatic focus",
       "/remember Alice | fact — pin a creator-confirmed memory",
       "/recall Alice | topic — inspect matching memory",
-      "/live — show durable played-continuity capture + Story Card write counts",
+      "/live — show internal played-continuity capture + Character Notes mirrors",
       "/memdebug on/off — diagnostics",
       "/memclear CONFIRM — erase EIDETIC memory",
       "",
@@ -19287,15 +19342,29 @@ const EIDETIC = (() => {
     if(/\b(?:isn't|is not|wasn't|was not|not actually|false|wrong|disproved|disproven)\b/i.test(t))return "NEGATED";
     return "FACT";
   }
+  function liveLooksQuestion(text) {
+    let t=cleanText(text).replace(/^[\s\"'“”‘’]+|[\s\"'“”‘’]+$/g,"");
+    if(!t)return false;
+    if(/\?\s*$/.test(t))return true;
+    if(/^(?:who|what|where|when|why|how|which|whose|whom)\b/i.test(t))return true;
+    if(/^(?:can|could|would|will|do|does|did|is|are|was|were|have|has|had|should|may|might)\s+(?:you|we|they|he|she|it|there|any|the|a|an)\b/i.test(t))return true;
+    if(/^(?:you|i|we)\s+(?:ask|asks|asked|wonder|wonders|wondered|question|questions|questioned|inquire|inquires|inquired)\b/i.test(t))return true;
+    return false;
+  }
+  function liveStrategicText(text) {
+    const t=cleanText(text);
+    return /\b(?:worldship|planet[- ]sized (?:ship|vessel|construct)|invasion|first contact|hidden (?:alien |monitoring )?(?:ship|vessel)|monitor(?:s|ed|ing)? (?:the )?(?:system|planet|earth|solar system)|destination (?:is|was) earth|headed? (?:for|toward|towards) earth|hostile (?:fleet|ship|vessel|civilization|civilisation|species)|route corridor|garrison|checkpoint|waystation|station (?:is|was|has been) destroyed|destroyed (?:the )?(?:station|base|node|garrison|checkpoint)|collapsed (?:the )?(?:station|base|node|garrison|checkpoint)|direct first contact|major threat|existential threat)\b/i.test(t);
+  }
   function liveFactEligible(text, mode, imp) {
-    const t=cleanText(text); if(!t||mode==="question"||t.length<12)return false;
+    const t=cleanText(text); if(!t||mode==="question"||liveLooksQuestion(t)||t.length<12)return false;
     if(/^(?:okay|right|yes|no|yeah|yeh|thanks|thank you|hello|hi|bye|goodnight|night)\b[.!?]*$/i.test(t))return false;
-    if(mode==="event"||mode==="player-event") return imp>=3 || /\b(?:arriv(?:e|es|ed)|leav(?:e|es|ing)|return(?:s|ed)?|discover(?:s|ed)?|find(?:s|ing)?|found|attack(?:s|ed)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|seize(?:s|d)?|escape(?:s|d)?|custody|injur(?:e|es|ed)|wound(?:s|ed)?|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|die(?:s|d)?|dead|alive|missing|move(?:s|d)?|stay(?:s|ed)?|learn(?:s|ed)?|tell(?:s|ing)?|told|reveal(?:s|ed)?|confirm(?:s|ed)?|measure(?:s|d)?|match(?:es|ed)?|orbit(?:s|ing)?|pod|vision|anomaly|relationship|partner|married|dating|pregnant|birthday|years? old|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|depart(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translate(?:s|d)?|translation|reply|response|crew|mission|objective|route|anchor key|dead hour|revision mark|offline|ownership)\b/i.test(t);
-    return mode==="claim"||mode==="belief"||mode==="uncertain";
+    if(mode==="event"||mode==="player-event") return imp>=3 || liveStrategicText(t) || /\b(?:arriv(?:e|es|ed)|leav(?:e|es|ing)|return(?:s|ed)?|discover(?:s|ed)?|find(?:s|ing)?|found|attack(?:s|ed)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|seize(?:s|d)?|escape(?:s|d)?|custody|injur(?:e|es|ed)|wound(?:s|ed)?|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|die(?:s|d)?|dead|alive|missing|move(?:s|d)?|stay(?:s|ed)?|learn(?:s|ed)?|tell(?:s|ing)?|told|reveal(?:s|ed)?|confirm(?:s|ed)?|admit(?:s|ted)?|measure(?:s|d)?|match(?:es|ed)?|orbit(?:s|ing)?|pod|vision|anomaly|relationship|partner|married|dating|pregnant|birthday|years? old|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|depart(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translate(?:s|d)?|translation|reply|response|crew|mission|objective|route|anchor key|dead hour|revision mark|offline|ownership)\b/i.test(t);
+    if(mode==="claim"||mode==="belief"||mode==="uncertain") return imp>=3 || liveStrategicText(t);
+    return false;
   }
   function liveFactDurabilityScore(f) {
     if(!f)return -99;
-    if(Number.isFinite(f.cardScore16))return f.cardScore16;
+    if(Number.isFinite(f.cardScore18))return f.cardScore18;
     const t=cleanText(f.text), low=t.toLowerCase();
     if(!t)return -99;
     const wordCount=t.split(/\s+/).filter(Boolean).length;
@@ -19303,53 +19372,99 @@ const EIDETIC = (() => {
     const names=Array.isArray(f.names)?f.names:[];
     const world=Array.isArray(f.world)?f.world:[];
     if(t.length<18||wordCount<3)score-=4;
-    if(f.status==="FACT"||f.status==="NEGATED")score+=1;
+    if(liveLooksQuestion(t))score-=12;
+    if(f.status==="FACT"||f.status==="NEGATED")score+=2;
     else if(/^(?:CLAIM|BELIEF|INFERENCE|UNCONFIRMED)$/.test(safeText(f.status)))score-=0.5;
     if(names.length)score+=1;
     if(world.some(w=>!/^character:/i.test(safeText(w))))score+=1;
 
-    // Fast durable-state patterns. Deliberately avoid generic "moved" so lines like
-    // "hasn't moved from the gate" do not become current location facts.
     const stateLike=/\b(?:lives?|resides?|stays?)\s+(?:in|at|on|near|with)\b|\b(?:moved|moves|relocated)\s+(?:(?:from\s+[^.!?]{1,70}?\s+)?(?:to|into|back to))\b|\bworks?\s+as\b|\b(?:is|was|became|becomes|remains|has become)\s+(?:now\s+|currently\s+|still\s+)?(?:dead|alive|resurrected|revived|injured|wounded|pregnant|missing|unconscious|awake|ill|sick|healthy|retired|imprisoned|incarcerated|hospitalized|hospitalised)\b|\b(?:is|became|becomes|remains)\s+(?:now\s+|currently\s+)?(?:married to|dating|engaged to|friends with|estranged from|divorced from|separated from|in a relationship with)\b|\b(?:real name is|is known as|codename is|code name is|alias is|goes by)\b|\b(?:joined|joins|is a member of|belongs to|works for)\b/i;
     if(stateLike.test(t))score+=5;
 
-    const durable=/\b(?:arriv(?:e|es|ed)|depart(?:s|ed|ing)?|return(?:s|ed)?|relocat(?:e|es|ed)|discover(?:s|ed)?|learn(?:s|ed)?|reveal(?:s|ed)?|confirm(?:s|ed)?|prove(?:s|d)?|identify(?:ies|ied)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|seize(?:s|d)?|escape(?:s|d)?|injur(?:e|es|ed)|wound(?:s|ed)?|hospitali[sz](?:e|es|ed)|die(?:s|d)?|dead|alive|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|offline|online|stolen|steal(?:s|ing)?|owns?|ownership|possess(?:es|ed)?|gives?|gave|takes?|took|loses?|lost|married|divorc(?:e|es|ed)|engag(?:e|es|ed)|dating|partner|pregnan(?:t|cy)|born|job|works? as|promot(?:e|es|ed)|retir(?:e|es|ed)|joins?|joined|leaves? (?:the )?(?:team|agency|group|faction)|real name|codename|alias|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|course for|mission|objective|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translation|route|anchor key|dead hour|revision mark|evidence|warrant|contract|database|injury|relationship)\b/i;
+    const durable=/\b(?:arriv(?:e|es|ed)|depart(?:s|ed|ing)?|return(?:s|ed)?|relocat(?:e|es|ed)|discover(?:s|ed)?|learn(?:s|ed)?|reveal(?:s|ed)?|confirm(?:s|ed)?|admit(?:s|ted)?|prove(?:s|d)?|identify(?:ies|ied)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|seize(?:s|d)?|escape(?:s|d)?|injur(?:e|es|ed)|wound(?:s|ed)?|hospitali[sz](?:e|es|ed)|die(?:s|d)?|dead|alive|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|offline|online|stolen|steal(?:s|ing)?|owns?|ownership|possess(?:es|ed)?|gives?|gave|takes?|took|loses?|lost|married|divorc(?:e|es|ed)|engag(?:e|es|ed)|dating|partner|pregnan(?:t|cy)|born|job|works? as|promot(?:e|es|ed)|retir(?:e|es|ed)|joins?|joined|leaves? (?:the )?(?:team|agency|group|faction)|real name|codename|alias|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|course for|en route|heading (?:for|to|toward|towards)|mission|objective|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translation|route|anchor key|dead hour|revision mark|evidence|warrant|contract|database|injury|relationship)\b/i;
     if(durable.test(t))score+=4;
 
     const major=/\b(?:explosion|collapse|fire|attack|assault|fight|battle|ambush|rescue|hostage|evacuat(?:e|es|ed|ion)|containment|blackout|temporal|anomaly|orbit|pod|vehicle|ship|base|lab|hospital|police|time force|revision)\b/i;
     if(major.test(t)&&(names.length||world.length))score+=2;
+    if(liveStrategicText(t))score+=6;
+    if(/\b(?:set(?:s|ting)? course|course (?:is )?locked|en route|heading (?:for|to|toward|towards)|current destination|destination set)\b/i.test(t))score+=4;
 
     const transient=/\b(?:looks?|glances?|watches?|stares?|nods?|smiles?|grins?|shrugs?|tilts? (?:his|her|their|the) head|takes? one step|steps? (?:forward|back)|moves? (?:forward|back|closer)|hasn['’]t moved|has not moved|doesn['’]t move|does not move|hand (?:rests?|stays?|moves?)|gaze|breath|breathing|says?|asks?|replies?|answers?|murmurs?|mutters?|yells?|shouts?)\b/i;
-    if(transient.test(t)&&!durable.test(t))score-=3;
+    if(transient.test(t)&&!durable.test(t)&&!liveStrategicText(t))score-=3;
 
     const genericPlayer=/^(?:you|i)\s+(?:leave|wait|look|watch|walk|move|go|eat|sleep|sit|stand|nod|turn|run)\b/i;
-    if(genericPlayer.test(t)&&!durable.test(t))score-=5;
-    if(/^["“']?[^.!?]{0,45}["”']?\s*(?:,\s*)?(?:he|she|they)\s+says?\b/i.test(t)&&!durable.test(t))score-=3;
-    if(!names.length&&!world.length&&/^(?:i|you|he|she|they|his|her|their)\b/i.test(low)&&!durable.test(t))score-=2;
-    try{f.cardScore16=score;}catch(_){}
+    if(genericPlayer.test(t)&&!durable.test(t)&&!liveStrategicText(t))score-=5;
+    if(/^['\"“”]?[^.!?]{0,45}['\"“”]?\s*(?:,\s*)?(?:he|she|they)\s+says?\b/i.test(t)&&!durable.test(t)&&!liveStrategicText(t))score-=3;
+    if(!names.length&&!world.length&&/^(?:i|you|he|she|they|his|her|their)\b/i.test(low)&&!durable.test(t)&&!liveStrategicText(t))score-=2;
+    if(/\b(?:i['’]?ll|i will)\s+(?:be|stay|remain)\s+(?:alive|there|ready|fine|okay)\b/i.test(t)&&!liveStrategicText(t))score-=9;
+    try{f.cardScore18=score;}catch(_){}
     return score;
   }
   function liveFactCardEligible(f) {
-    return liveFactDurabilityScore(f)>=3;
+    return !!f&&!f.superseded&&!liveLooksQuestion(f.text)&&liveFactDurabilityScore(f)>=3;
+  }
+  function liveFactFacet(f) {
+    const t=cleanText(f&&f.text||f);
+    if(/\b(?:set(?:s|ting)? course|course (?:is )?locked|plot(?:s|ted|ting)? (?:a )?course|en route|heading (?:for|to|toward|towards)|current destination|destination set)\b/i.test(t))return"mission-course";
+    if(/\b(?:destroy(?:s|ed)?|collapse(?:s|d)?)\b[^.!?]{0,60}\b(?:station|base|node|garrison|checkpoint|waystation|facility)\b|\b(?:station|base|node|garrison|checkpoint|waystation|facility)\b[^.!?]{0,60}\b(?:destroyed|collapsed|gone|offline)\b/i.test(t))return"site-destruction";
+    if(/\b(?:worldship|planet[- ]sized (?:ship|vessel|construct)|invasion)\b/i.test(t)&&/\b(?:earth|destination|hostile|toward|towards|headed|approach|threat)\b/i.test(t))return"strategic-threat";
+    if(/\b(?:hidden|secret)\b[^.!?]{0,50}\b(?:ship|vessel|platform)\b|\b(?:ship|vessel|platform)\b[^.!?]{0,70}\bmonitor(?:s|ed|ing)?\b/i.test(t))return"strategic-reveal";
+    if(/\b(?:dead|died|killed|alive|missing|unconscious|awake|imprisoned|captured|in custody|released|escaped)\b/i.test(t))return"status";
+    if(/\b(?:married|divorced|engaged|dating|partner|relationship|estranged|separated)\b/i.test(t))return"relationship";
+    if(/\b(?:arrived|departed|returned|relocated|moved to|moved into|left for)\b/i.test(t))return"movement";
+    if(/\b(?:discover(?:s|ed)?|reveal(?:s|ed)?|confirm(?:s|ed)?|admit(?:s|ted)?|found|identified?)\b/i.test(t))return"discovery";
+    return safeText(f&&f.status)==="FACT"?"event":"statement";
+  }
+  function liveFactPriority(f) {
+    if(!f)return-99;
+    if(Number.isFinite(f.priority18))return f.priority18;
+    let n=liveFactDurabilityScore(f)*2+Math.max(0,importance(f.text));
+    if(f.status==="FACT"||f.status==="NEGATED")n+=2;
+    else if(/^(?:CLAIM|BELIEF|INFERENCE|UNCONFIRMED)$/.test(safeText(f.status)))n-=1;
+    if(liveStrategicText(f.text))n+=4;
+    try{f.priority18=n;}catch(_){}
+    return n;
+  }
+  function liveFactsShareSubject(a,b) {
+    if(!a||!b)return false;
+    if(liveFactFacet(a)==="mission-course"&&liveFactFacet(b)==="mission-course")return true;
+    const an=[].concat(a.names||[],a.world||[]), bn=new Set([].concat(b.names||[],b.world||[]));
+    for(let i=0;i<an.length;i++)if(bn.has(an[i]))return true;
+    const at=new Set(tokenList(a.text,16)), bt=tokenList(b.text,16); let overlap=0;
+    for(let i=0;i<bt.length;i++)if(at.has(bt[i]))overlap++;
+    return overlap>=3;
   }
 
   function addLiveFact(text, owners, turn, kind, mode, imp, src) {
     const r=root(); if(!r||!liveFactEligible(text,mode,imp))return;
     const shown=displayText(text,EIDETIC_CONFIG.LIVE_FACT_CHARS), status=evidenceState(shown,mode);
-    // Never promote interpretation-heavy model prose to FACT merely because it was narrated confidently.
     const finalStatus=(kind==="output"&&status==="FACT"&&/\b(?:means? |therefore|must |designed |specifically target|proves?|obviously|clearly)\b/i.test(shown))?"INFERENCE":status;
     const names=namesMentioned(shown), world=worldEntitiesMentioned(shown);
     const fp=hash(finalStatus+"|"+shown.toLowerCase());
     if((r.liveFacts||[]).some(x=>x&&x.fp===fp))return;
     if (INGEST_ORIGIN === "bootstrap" && !BOOTSTRAP_CAPTURE_LIVE) return;
-    r.liveFacts.push({id:"lf"+(++r.seq),turn,kind,mode,status:finalStatus,text:shown,owners:Array.from(owners||[PLAYER]),names,world,src,fp,origin:INGEST_ORIGIN});
+    const f={id:"lf"+(++r.seq),turn,kind,mode,status:finalStatus,text:shown,owners:Array.from(owners||[PLAYER]),names,world,src,fp,origin:INGEST_ORIGIN};
+    f.facet=liveFactFacet(f); f.priority18=liveFactPriority(f);
+    if(!liveFactCardEligible(f))return;
+    // New output-confirmed state supersedes stale or player-proposed state in the same
+    // durable facet. Historical facts remain elsewhere in episodic memory.
+    if(finalStatus==="FACT"||finalStatus==="NEGATED"){
+      for(let i=r.liveFacts.length-1;i>=0;i--){
+        const old=r.liveFacts[i]; if(!old||old.superseded)continue;
+        if(liveFactFacet(old)!==f.facet||!liveFactsShareSubject(old,f))continue;
+        const age=Math.abs(Number(turn||0)-Number(old.turn||0));
+        if(f.facet==="mission-course"||age<=18){old.superseded=true; old.supersededBy=f.id; r.stats.liveFactSupersessions=Number(r.stats.liveFactSupersessions||0)+1;}
+        if(f.facet==="mission-course")break;
+      }
+    }
+    r.liveFacts.push(f);
     if (INGEST_ORIGIN === "bootstrap") r.stats.bootstrapLiveFacts = Number(r.stats.bootstrapLiveFacts || 0) + 1;
     if(r.liveFacts.length>EIDETIC_CONFIG.LIVE_FACT_LIMIT)r.liveFacts.splice(0,r.liveFacts.length-EIDETIC_CONFIG.LIVE_FACT_LIMIT);
     r.stats.liveFacts=Number(r.stats.liveFacts||0)+1;
   }
 
   // -------------------------------------------------------------------------
-  // Character Insight Ledger (Schema 17)
+  // Character Insight Ledger (Schema 17+, retained in Schema 18)
   // -------------------------------------------------------------------------
   function insightCategory(text, speech) {
     const t=cleanText(text);
@@ -19685,7 +19800,7 @@ const EIDETIC = (() => {
   }
   function liveFactLine(f){ return "T"+f.turn+" ["+f.status+"] "+displayText(f.text,EIDETIC_CONFIG.LIVE_FACT_CHARS); }
   function writeCharacterLiveNotes(charKey) {
-    if(!(EIDETIC_CONFIG.SYNC_STORY_CARD_ENTRIES || EIDETIC_CONFIG.SYNC_STORY_CARD_NOTES))return false;
+    if(!EIDETIC_CONFIG.SYNC_STORY_CARD_ENTRIES)return false;
     if(!cardSyncAllowed(false))return false;
     const idx=findStoryCardForCharacter(charKey); if(idx<0)return false;
     let facts=liveFactsForCharacter(charKey,EIDETIC_CONFIG.CARD_NOTE_FACTS); if(!facts.length)return false;
@@ -19805,7 +19920,7 @@ const EIDETIC = (() => {
       handled++;
       const key=characterKeyForStoryCard(c);
       const facts=key?liveFactsForCharacter(key,EIDETIC_CONFIG.CARD_NOTE_FACTS):[];
-      if(key&&facts.length){
+      if(EIDETIC_CONFIG.SYNC_STORY_CARD_ENTRIES&&key&&facts.length){
         writeCharacterLiveNotes(key);
       }else{
         const base=stripManagedEntryBlock(original,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
@@ -19813,12 +19928,37 @@ const EIDETIC = (() => {
       }
     }
     r.runtime.managedCardCleanupIndex=i;
-    // Clean the global dashboard immediately from existing Schema 15 liveFacts too.
-    syncCurrentContinuityCard();
+    // Schema 18 keeps live continuity internal; never recreate the retired dashboard.
     if(i>=storyCards.length){
       r.runtime.needsSchema16CardCleanup=false;
       r.runtime.managedCardCleanupIndex=0;
     }
+  }
+
+  function cleanupSchema18StoryCardClutter() {
+    const r=root(); if(!r||!r.runtime)return false;
+    // The old dashboard was useful for debugging but duplicated Front Memory and cluttered
+    // users' Story Card lists. Import happens before this cleanup, so no old durable facts
+    // are lost when upgrading.
+    const idx=findCurrentContinuityCardIndex();
+    if(idx<0){r.runtime.needsSchema18CardCleanup=false;r.runtime.liveDashboardRemoved=true;r.runtime.liveCardId="";return false;}
+    if(typeof removeStoryCard!=="function"){
+      // Do not destructively fake a deletion on clients that do not expose the helper.
+      // AUTO_CURRENT_CONTINUITY_CARD=false guarantees the old card will never be rewritten.
+      r.runtime.needsSchema18CardCleanup=false;
+      return false;
+    }
+    try{
+      removeStoryCard(idx);
+      r.runtime.liveCardId="";
+      r.runtime.liveDashboardRemoved=true;
+      r.runtime.needsSchema18CardCleanup=false;
+      r.stats.liveDashboardRemovals=Number(r.stats.liveDashboardRemovals||0)+1;
+      r.runtime.currentCardSeedSig="";
+      r.runtime.currentCardSeedScanTurn=-1;
+      r.runtime.currentCardSeedCardCount=-1;
+      return true;
+    }catch(_){r.runtime.needsSchema18CardCleanup=false;return false;}
   }
 
   function findCurrentContinuityCardIndex(){
@@ -19864,6 +20004,7 @@ const EIDETIC = (() => {
   }
 
   function syncCurrentContinuityCard(){
+    if(!EIDETIC_CONFIG.AUTO_CURRENT_CONTINUITY_CARD)return false;
     const r=root(),found=ensureCurrentContinuityCard(); if(!r||!found)return false;
     const c=found.card, idx=found.index;
     const facts=(r.liveFacts||[]).filter(liveFactCardEligible).slice(-EIDETIC_CONFIG.CURRENT_CARD_FACTS);
@@ -19889,14 +20030,18 @@ const EIDETIC = (() => {
     for(let i=Math.max(0,ins.length-18);i<ins.length;i++){
       const x=ins[i]||{}; if(Number(x.turn||0)<t-3)continue; if(x.subject)touched.add(x.subject);
     }
-    touched.forEach(k=>{writeCharacterLiveNotes(k);writeCharacterInsightNotes(k);});
-    syncCurrentContinuityCard();
+    touched.forEach(k=>{if(EIDETIC_CONFIG.SYNC_STORY_CARD_ENTRIES)writeCharacterLiveNotes(k);writeCharacterInsightNotes(k);});
     r.runtime.liveSyncTurn=t; r.runtime.liveSyncSig=sig; r.runtime.insightSyncSig=sig;
   }
 
   function seedFromStoryCards() {
     if (typeof storyCards === "undefined" || !Array.isArray(storyCards)) return false;
     const r = root();
+    const scanTurn=currentTurn(), count=storyCards.length, interval=Math.max(1,Number(EIDETIC_CONFIG.STORY_CARD_SCAN_INTERVAL)||6);
+    const quickParts=[];
+    for(let qi=0;qi<storyCards.length;qi++){const qc=storyCards[qi]||{}, qt=safeText(qc.type).toLowerCase();if(/character|npc|person|people|cast/.test(qt))quickParts.push([safeText(qc.id),qt,safeText(qc.title),safeText(qc.keys)].join("|"));}
+    const quickSig=hash(quickParts.join("\u001e"));
+    if(r&&r.runtime&&r.runtime.storyCardSig&&r.runtime.storyCardQuickSig===quickSig&&Number(r.runtime.storyCardCount)===count&&Number(r.runtime.storyCardScanTurn)>=0&&scanTurn>=Number(r.runtime.storyCardScanTurn)&&scanTurn-Number(r.runtime.storyCardScanTurn)<interval)return false;
     const sigParts = [];
     for (let i = 0; i < storyCards.length; i++) {
       const c = storyCards[i] || {};
@@ -19935,8 +20080,89 @@ const EIDETIC = (() => {
       }
       if (entryIdentity) addAliasToCharacter(charKey, entryIdentity, "story-card-entry");
     }
-    if (r && r.runtime) r.runtime.storyCardSig = sig;
+    if (r && r.runtime) { r.runtime.storyCardSig = sig; r.runtime.storyCardQuickSig=quickSig; r.runtime.storyCardScanTurn=scanTurn; r.runtime.storyCardCount=count; }
     return true;
+  }
+
+  function currentCardSeedScore(card) {
+    if(!card)return-99;
+    const type=safeText(card.type).toLowerCase();
+    if(/character|npc|person|people|cast/.test(type))return-99;
+    const title=safeText(card.title), desc=safeText(card.description!=null?card.description:card.notes), entry=stableStoryCardEntry(card);
+    const all=(title+"\n"+desc+"\n"+entry), low=all.toLowerCase();
+    if(!entry||splitKeys(card.keys).indexOf(EIDETIC_CONFIG.CONFIG_CARD_KEY)>=0||safeText(title).indexOf("EIDETIC")>=0)return-99;
+    let score=0;
+    const negativeCurrent=/\b(?:not current state|not the current state|current live state belongs\b|current state belongs\b|archive only|superseded by)\b/i.test(all);
+    const strong=!negativeCurrent&&/\b(?:current live state|current played state|current state|moving state|live state)\b/i.test(all);
+    if(strong)score+=14;
+    if(negativeCurrent)score-=30;
+    if(/\bcurrently\b|\bnow\b|\ben route\b|\bcurrent destination\b|\bcurrent threat\b|\bstatus:\s*(?:active|destroyed|missing|dead|alive|en route|offline|online)\b/i.test(all))score+=4;
+    if(/\bplayed(?: canon| history)?\s*:/i.test(all))score+=4;
+    if(/\bmain event\b/i.test(title))score+=3;
+    if(/\bbroad played continuity\b/i.test(desc))score+=2;
+    if(/\bnewer (?:story|play|played|facts?) (?:overrides?|supersedes?)\b/i.test(all))score+=3;
+    if(/\bsuperseded\b/i.test(all))score-=30;
+    if(/\barchive(?: detail)?\b|\bhistorical reference\b|\btriggers disabled\b/i.test(all))score-=12;
+    if(/\bfuture (?:direction|possibility|flexible|plan|payoff)\b|\bauthor plan\b|\bwriter[- ]room\b/i.test(all))score-=22;
+    if(card.isSpoiler&&!strong)score-=5;
+    return score;
+  }
+  function refreshCurrentCardSeeds() {
+    const r=root(); if(!r||!r.runtime||typeof storyCards==="undefined"||!Array.isArray(storyCards))return false;
+    const scanTurn=currentTurn(), count=storyCards.length, interval=Math.max(1,Number(EIDETIC_CONFIG.CURRENT_CARD_SEED_SCAN_INTERVAL)||6);
+    const quickParts=[];
+    for(let qi=0;qi<storyCards.length;qi++){const qc=storyCards[qi]||{}, qt=safeText(qc.type).toLowerCase();if(/character|npc|person|people|cast/.test(qt)||/EIDETIC/i.test(safeText(qc.title)))continue;quickParts.push([safeText(qc.id),qt,safeText(qc.title),safeText(qc.keys),safeText(qc.description!=null?qc.description:qc.notes)].join("|"));}
+    const quickSig=hash(quickParts.join("\u001e"));
+    if(r.runtime.currentCardSeedSig&&r.runtime.currentCardSeedQuickSig===quickSig&&Number(r.runtime.currentCardSeedCardCount)===count&&Number(r.runtime.currentCardSeedScanTurn)>=0&&scanTurn>=Number(r.runtime.currentCardSeedScanTurn)&&scanTurn-Number(r.runtime.currentCardSeedScanTurn)<interval)return false;
+    const sigParts=[];
+    for(let i=0;i<storyCards.length;i++){
+      const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase();
+      if(/character|npc|person|people|cast/.test(type)||/EIDETIC/i.test(safeText(c.title)))continue;
+      sigParts.push([safeText(c.id),type,safeText(c.title),safeText(c.keys),safeText(c.description!=null?c.description:c.notes),stableStoryCardEntry(c)].join("|"));
+    }
+    const sig=hash(sigParts.join("\u001e"));
+    if(r.runtime.currentCardSeedSig===sig)return false;
+    const seeds=[];
+    for(let i=0;i<storyCards.length;i++){
+      const c=storyCards[i]||{}, score=currentCardSeedScore(c); if(score<6)continue;
+      const entry=stableStoryCardEntry(c); if(!entry)continue;
+      const title=safeText(c.title)||safeText(c.keys)||("Story Card "+i);
+      const seedAll=title+"\n"+safeText(c.description)+"\n"+entry;
+      const strong=!/\b(?:not current state|not the current state|current live state belongs\b|current state belongs\b|archive only|superseded by)\b/i.test(seedAll)&&/\b(?:current live state|current played state|current state|moving state|live state)\b/i.test(seedAll);
+      seeds.push({id:safeText(c.id)||String(i),title,score,strong,text:displayText(entry,EIDETIC_CONFIG.CURRENT_CARD_SEED_CHARS),tokens:tokenList(title+" "+entry,24)});
+    }
+    seeds.sort((a,b)=>b.score-a.score||String(a.title).localeCompare(String(b.title)));
+    r.runtime.currentCardSeeds=seeds.slice(0,12);
+    r.runtime.currentCardSeedSig=sig;
+    r.runtime.currentCardSeedQuickSig=quickSig;
+    r.runtime.currentCardSeedScanTurn=scanTurn;
+    r.runtime.currentCardSeedCardCount=count;
+    r.stats.currentCardSeedScans=Number(r.stats.currentCardSeedScans||0)+1;
+    return true;
+  }
+  function relevantCurrentCardSeeds(query, plan, liveNow) {
+    const r=root(); if(!r||!r.runtime||!Array.isArray(r.runtime.currentCardSeeds))return[];
+    const tokens=(plan&&plan.lexicalTokens)||tokenList(query,20), live=(liveNow||[]).map(f=>cleanText(f.text).toLowerCase());
+    const ranked=[];
+    for(let i=0;i<r.runtime.currentCardSeeds.length;i++){
+      const x=r.runtime.currentCardSeeds[i]; if(!x)continue;
+      let score=Number(x.score||0), overlaps=0; const low=cleanText(x.text).toLowerCase();
+      for(let j=0;j<tokens.length;j++)if(tokens[j]&&low.indexOf(tokens[j])>=0){score+=3;overlaps++;}
+      // Avoid spending Front Memory twice on a line that is already nearly verbatim in live facts.
+      let duplicate=false;
+      for(let li=0;li<live.length;li++)if(live[li]&&low.indexOf(live[li])>=0){duplicate=true;break;}
+      if(duplicate)score-=5;
+      if(!x.strong&&overlaps===0)continue;
+      ranked.push({x,score,overlaps});
+    }
+    ranked.sort((a,b)=>b.score-a.score||b.overlaps-a.overlaps);
+    const out=[], seen=new Set(), max=Math.max(0,Number(EIDETIC_CONFIG.CURRENT_CARD_SEED_LIMIT)||0);
+    for(let i=0;i<ranked.length&&out.length<max;i++){
+      const x=ranked[i].x, fp=hash(cleanText(x.text).toLowerCase()); if(seen.has(fp))continue;
+      seen.add(fp); out.push(x);
+    }
+    if(out.length)r.stats.currentCardSeedRecalls=Number(r.stats.currentCardSeedRecalls||0)+1;
+    return out;
   }
 
   function candidateNamesFromText(text) {
@@ -20610,7 +20836,12 @@ const EIDETIC = (() => {
   }
   function seedWorldEntitiesFromStoryCards() {
     if (!EIDETIC_CONFIG.ENABLE_WORLD_MEMORY || typeof storyCards==="undefined" || !Array.isArray(storyCards)) return;
-    const r=root(), parts=[];
+    const r=root(), scanTurn=currentTurn(), count=storyCards.length, interval=Math.max(1,Number(EIDETIC_CONFIG.STORY_CARD_SCAN_INTERVAL)||6);
+    const quickParts=[];
+    for(let qi=0;qi<storyCards.length;qi++){const qc=storyCards[qi]||{}, qt=worldTypeFromCard(qc.type);if(qt)quickParts.push([safeText(qc.id),safeText(qc.type),safeText(qc.title),safeText(qc.keys)].join("|"));}
+    const quickSig=hash(quickParts.join("\u001e"));
+    if(r&&r.runtime&&r.runtime.worldCardSig&&r.runtime.worldCardQuickSig===quickSig&&Number(r.runtime.worldCardCount)===count&&Number(r.runtime.worldCardScanTurn)>=0&&scanTurn>=Number(r.runtime.worldCardScanTurn)&&scanTurn-Number(r.runtime.worldCardScanTurn)<interval)return;
+    const parts=[];
     for (let i=0;i<storyCards.length;i++) { const c=storyCards[i]||{}, t=worldTypeFromCard(c.type); if (!t) continue; parts.push(safeText(c.id)+"|"+safeText(c.type)+"|"+safeText(c.title)+"|"+safeText(c.keys)+"|"+stableStoryCardEntry(c)); }
     const sig=hash(parts.join("\u001e")); if (r.runtime.worldCardSig===sig) return;
     for (let i=0;i<storyCards.length;i++) {
@@ -20625,7 +20856,7 @@ const EIDETIC = (() => {
       const wk=ensureWorldEntity(name,type,"story-card",keys.slice(1),true);
       // Story Card content remains native Story Card context; EIDETIC seeds identity/type only.
     }
-    r.runtime.worldCardSig=sig;
+    r.runtime.worldCardSig=sig; r.runtime.worldCardQuickSig=quickSig; r.runtime.worldCardScanTurn=scanTurn; r.runtime.worldCardCount=count;
   }
   function worldEntityPatterns() {
     const w=worldRoot(), out=[]; if (!w) return out;
@@ -21797,53 +22028,48 @@ const EIDETIC = (() => {
   function relevantLiveContinuity(query, plan, limit, activeCharactersForScene) {
     const r=root(); if(!r||!Array.isArray(r.liveFacts)||!r.liveFacts.length)return[];
     const turn=currentTurn(), tokens=(plan&&plan.lexicalTokens)||tokenList(query,20);
-    const qnames=new Set((plan&&plan.names)||[]);
-    const candidates=[];
-    const start=Math.max(0,r.liveFacts.length-48);
+    const qnames=new Set((plan&&plan.names)||[]), candidates=[];
+    const start=Math.max(0,r.liveFacts.length-72);
     for(let i=start;i<r.liveFacts.length;i++){
-      const f=r.liveFacts[i]; if(!f||!liveFactCardEligible(f))continue;
+      const f=r.liveFacts[i]; if(!f||f.superseded||!liveFactCardEligible(f)||liveLooksQuestion(f.text))continue;
       if(EIDETIC_CONFIG.STRICT_KNOWLEDGE){
         const gate=(Array.isArray(activeCharactersForScene)&&activeCharactersForScene.length?activeCharactersForScene:presentSceneCharacters());
         if(gate.length){
-          const owners=Array.isArray(f.owners)?f.owners:[];
-          let visible=true;
+          const owners=Array.isArray(f.owners)?f.owners:[]; let visible=true;
           for(let gi=0;gi<gate.length;gi++) if(owners.indexOf(gate[gi])<0){visible=false;break;}
           if(!visible)continue;
         }
       }
       const age=Math.max(0,turn-Number(f.turn||0));
-      if(age>36 && safeText(f.origin)!=="live")continue;
-      let score=0, overlaps=0;
+      if(age>72&&safeText(f.origin)!=="live")continue;
+      let score=liveFactPriority(f), overlaps=0;
       const low=cleanText(f.text).toLowerCase();
-      for(let j=0;j<tokens.length;j++){
-        const tok=tokens[j]; if(tok&&low.indexOf(tok)>=0){score+=4;overlaps++;}
-      }
-      const names=f.names||[];
-      for(let j=0;j<names.length;j++)if(qnames.has(names[j]))score+=7;
-      if(age<=2)score+=8; else if(age<=5)score+=6; else if(age<=10)score+=3; else if(age<=20)score+=1;
-      if(f.status==="FACT")score+=1;
-      if(f.origin==="bootstrap")score-=1;
-      candidates.push({f,score,overlaps,age,i});
+      for(let j=0;j<tokens.length;j++){const tok=tokens[j]; if(tok&&low.indexOf(tok)>=0){score+=4;overlaps++;}}
+      const names=f.names||[]; for(let j=0;j<names.length;j++)if(qnames.has(names[j]))score+=7;
+      if(age<=2)score+=5; else if(age<=6)score+=4; else if(age<=14)score+=2; else if(age<=30)score+=1;
+      if(f.status==="FACT")score+=2;
+      if(f.origin==="bootstrap"||f.origin==="card-import")score-=1;
+      candidates.push({f,score,priority:liveFactPriority(f),dur:liveFactDurabilityScore(f),overlaps,age,i,facet:liveFactFacet(f)});
     }
-    candidates.sort((a,b)=>b.score-a.score || b.i-a.i);
+    candidates.sort((a,b)=>b.score-a.score||b.priority-a.priority||b.i-a.i);
 
-    const out=[], seen=new Set();
-    // First take topical matches, then fill from very recent live continuity.
-    for(let pass=0;pass<2 && out.length<(limit||EIDETIC_CONFIG.LIVE_RECALL_FACTS);pass++){
-      for(let i=0;i<candidates.length&&out.length<(limit||EIDETIC_CONFIG.LIVE_RECALL_FACTS);i++){
-        const c=candidates[i], f=c.f;
-        if(seen.has(f.fp||f.id))continue;
+    const out=[], seen=new Set(), facets=new Set(), max=Math.max(1,limit||EIDETIC_CONFIG.LIVE_RECALL_FACTS);
+    for(let pass=0;pass<2&&out.length<max;pass++){
+      for(let i=0;i<candidates.length&&out.length<max;i++){
+        const c=candidates[i], f=c.f, id=f.fp||f.id; if(seen.has(id))continue;
         if(pass===0){
           if(plan&&plan.directQuestion){
-            const nameHit=(f.names||[]).some(n=>qnames.has(n));
-            if(!(c.overlaps>=2 || nameHit))continue;
-          } else if(!(c.overlaps>0 || c.score>=10))continue;
-        }
-        if(pass===1){
+            const nameHit=(f.names||[]).some(n=>qnames.has(n)); if(!(c.overlaps>=2||nameHit))continue;
+          }else if(!(c.overlaps>0||c.priority>=14||c.score>=18))continue;
+        }else{
           if(plan&&plan.directQuestion)continue;
-          if(c.age>8)continue;
+          if(c.dur<4)continue;
+          if(c.age>24&&!(c.priority>=16&&c.age<=60))continue;
         }
-        seen.add(f.fp||f.id); out.push(f);
+        // One line per state facet prevents duplicates such as a proposed destination and
+        // the immediately confirmed course lock from occupying half the recall block.
+        if(facets.has(c.facet)&&/^(?:mission-course|status|relationship|movement|strategic-threat|strategic-reveal)$/.test(c.facet))continue;
+        seen.add(id); facets.add(c.facet); out.push(f);
       }
     }
     out.sort((a,b)=>Number(a.turn||0)-Number(b.turn||0));
@@ -21856,6 +22082,7 @@ const EIDETIC = (() => {
     seedConfiguredCharacters();
     seedPlayerIdentity();
     seedFromStoryCards();
+    refreshCurrentCardSeeds();
     const query = buildQuery(extraText);
     const turn = currentTurn();
     const plan = makeQueryPlan(query);
@@ -21869,7 +22096,7 @@ const EIDETIC = (() => {
     }
     const sceneSig = Object.keys(r.scene || {}).sort().map(k => k + ":" + r.scene[k]).join(",");
     const focusSig = (r.manualFocus || []).join(",");
-    const cacheKey = hash([turn, r.seq || 0, query, budget, sceneSig, focusSig, Object.keys(r.chars || {}).length, r.world ? Object.keys(r.world.entities||{}).length : 0, r.world ? (r.world.facts||[]).length : 0, r.world ? currentStoryHours() : 0, r.liveFacts ? r.liveFacts.length : 0, r.liveFacts && r.liveFacts.length ? r.liveFacts[r.liveFacts.length-1].fp : "", r.insights ? r.insights.length : 0, r.insights && r.insights.length ? r.insights[r.insights.length-1].fp : ""].join("|"));
+    const cacheKey = hash([turn, r.seq || 0, query, budget, sceneSig, focusSig, Object.keys(r.chars || {}).length, r.world ? Object.keys(r.world.entities||{}).length : 0, r.world ? (r.world.facts||[]).length : 0, r.world ? currentStoryHours() : 0, r.liveFacts ? r.liveFacts.length : 0, r.liveFacts && r.liveFacts.length ? r.liveFacts[r.liveFacts.length-1].fp : "", r.insights ? r.insights.length : 0, r.insights && r.insights.length ? r.insights[r.insights.length-1].fp : "", r.runtime.currentCardSeedSig||""].join("|"));
     if (r.runtime.recallCacheKey === cacheKey) return r.runtime.recallCacheBlock || "";
 
     const active = activeCharacters(query, plan);
@@ -21880,6 +22107,12 @@ const EIDETIC = (() => {
       body.push("CURRENT PLAYED CONTINUITY (recent live canon; newer facts override stale setup. CLAIM/BELIEF/INFERENCE/UNCONFIRMED remain uncertain):");
       for (let li=0; li<liveNow.length; li++) body.push("• "+liveFactLine(liveNow[li]));
       r.stats.liveRecallInjects=Number(r.stats.liveRecallInjects||0)+1;
+    }
+
+    const currentSeeds=relevantCurrentCardSeeds(query,plan,liveNow);
+    if(currentSeeds.length){
+      body.push("SCENARIO CURRENT BASELINE (scenario-authored moving state; newer live play overrides it. This is author continuity, not automatic NPC knowledge):");
+      for(let ci=0;ci<currentSeeds.length;ci++)body.push("• "+displayText(currentSeeds[ci].text,EIDETIC_CONFIG.CURRENT_CARD_SEED_CHARS));
     }
 
     const seeds = relevantCardSeeds(active);
@@ -21992,11 +22225,29 @@ const EIDETIC = (() => {
       const tail = "\n" + CLOSE;
       let packed = headerLines.join("\n");
       for (let i = 0; i < body.length; i++) {
-        const candidate = packed + "\n" + body[i] + tail;
-        if (candidate.length > budget) break;
-        packed += "\n" + body[i];
+        const line=body[i];
+        const candidate = packed + "\n" + line + tail;
+        if (candidate.length <= budget) {
+          // Do not append a section heading unless at least part of its first bullet can fit.
+          if(!/^•\s/.test(line)&&i+1<body.length&&/^•\s/.test(body[i+1])){
+            const roomForPair=budget-(packed.length+1+line.length+1+tail.length);
+            if(roomForPair<80)break;
+          }
+          packed += "\n" + line;
+          continue;
+        }
+        // If a high-priority bullet is the first line beneath a heading, keep a compact
+        // version rather than leaving the heading orphaned or dropping the section entirely.
+        if(/^•\s/.test(line)){
+          const room=Math.max(0,budget-packed.length-tail.length-2);
+          if(room>=80){packed += "\n"+displayText(line,room);}
+        }
+        break;
       }
-      block = packed + tail;
+      // Remove a final orphan section heading if compaction still ended on one.
+      const packedLines=packed.split("\n");
+      if(packedLines.length&&/CONTINUITY|BASELINE|WORLD CONTINUITY|PRIVATE CONTINUITY/i.test(packedLines[packedLines.length-1])&&!/^•/.test(packedLines[packedLines.length-1]))packedLines.pop();
+      block = packedLines.join("\n") + tail;
       if (block.length > budget) {
         const room = Math.max(0, budget - compactHeader.join("\n").length - tail.length - 2);
         const emergency = body.length ? displayText(body[0], room) : "";
@@ -22164,7 +22415,7 @@ const EIDETIC = (() => {
     if (cmd === "live") {
       syncLiveStoryCards(true);
       const lf=(r.liveFacts||[]).slice(-6), ix=(r.insights||[]).filter(x=>x&&!x.superseded).slice(-4);
-      let liveMsg="EIDETIC live continuity: "+(r.liveFacts||[]).length+" durable facts • "+(r.insights||[]).length+" character insights • "+Number(r.stats.characterInsightNotes||0)+" character-Notes mirrors • "+Number(r.stats.characterInsightRecalls||0)+" insight recalls • "+Number(r.stats.cardEntryWrites||0)+" character-entry writes • "+Number(r.stats.liveCardWrites||0)+" continuity-card writes • "+Number(r.stats.liveRecallInjects||0)+" live-recall injections • card sync "+safeText(r.runtime.cardPersistence||"unknown")+" • Notes sync "+safeText(r.runtime.characterNotesPersistence||"unknown");
+      let liveMsg="EIDETIC live continuity: "+(r.liveFacts||[]).filter(f=>f&&!f.superseded).length+" active durable facts • "+(r.insights||[]).filter(x=>x&&!x.superseded).length+" character insights • "+Number(r.stats.characterInsightNotes||0)+" character-Notes mirrors • "+Number(r.stats.characterInsightRecalls||0)+" insight recalls • "+Number((r.runtime.currentCardSeeds||[]).length)+" scenario-current baselines cached • "+Number(r.stats.currentCardSeedRecalls||0)+" baseline recalls • "+Number(r.stats.liveRecallInjects||0)+" live-recall injections • Story Card dashboard OFF • Notes sync "+safeText(r.runtime.characterNotesPersistence||"unknown");
       if(Number(r.runtime.cardWriteFailures||0))liveMsg+=" ("+Number(r.runtime.cardWriteFailures||0)+" failed persistence checks)";
       if(ix.length)liveMsg+=" • important: "+ix.map(insightLine).join(" • ");
       else if(lf.length)liveMsg+=" • latest: "+lf.map(liveFactLine).join(" • ");
@@ -22353,7 +22604,9 @@ const EIDETIC = (() => {
     seedConfiguredCharacters();
     applyConfigCard();
     const storyCardsChanged=seedFromStoryCards();
+    refreshCurrentCardSeeds();
     importManagedContinuityFromStoryCards();
+    cleanupSchema18StoryCardClutter();
     cleanupLegacyManagedCharacterCards(4);
     const insightMigrated=migrateCharacterInsightsFromExistingMemory();
     seedWorldEntitiesFromStoryCards();

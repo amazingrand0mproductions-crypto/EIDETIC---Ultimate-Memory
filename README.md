@@ -520,21 +520,32 @@ That can make a conversation from hundreds or thousands of actions ago affect wh
 
 ### **The story moves forward. The characters keep the past.**
 
-## Live Continuity Sync (Schema 14)
+## Current Architecture — Schema 18
 
-EIDETIC keeps a durable played-continuity layer in addition to its hot/cold recall archive. Significant played developments are classified as `FACT`, `CLAIM`, `BELIEF`, `INFERENCE`, `UNCONFIRMED`, or `NEGATED` so interpretation is not silently promoted into canon.
+EIDETIC now keeps **moving played continuity internal** instead of creating a second Story Card as a dashboard. The only EIDETIC Story Card created automatically is **Config & Guide**. This keeps the Story Card list clean and avoids duplicating information that EIDETIC already supplies through Front Memory.
 
-Schema 14 corrects an important AI Dungeon integration mistake from older builds: **live continuity is persisted through Story Card Entry using the official `updateStoryCard` path, not Story Card Notes.** Character cards keep their original Entry text and receive a bounded managed `[[EIDETIC LIVE CONTINUITY]]` block.
+### Clutterless current memory
 
-The hidden-key **Current Played Continuity** card is a visible/persistent dashboard. It is not relied on as the model's active memory because hidden Story Card triggers are intentionally unlikely to fire. The newest relevant live continuity is instead injected into EIDETIC's Front Memory recall packet, where it can actually influence the next generation.
+- Significant played developments are stored in `state.__EIDETIC.liveFacts`.
+- Current facts are ranked by durability, strategic importance, relevance and recency.
+- Questions, transient dialogue, poses and low-value scene texture are rejected from current-state recall.
+- Newer confirmed state supersedes stale state in facets such as the active mission course.
+- `FACT`, `CLAIM`, `BELIEF`, `INFERENCE`, `UNCONFIRMED` and `NEGATED` remain distinct.
+- Current recall is injected through **Front Memory**; it does not depend on a Story Card trigger.
 
-Short meaningful player actions are now queried from their own text instead of automatically inheriting the previous AI paragraph. This prevents an instruction such as `Plot a course for the checkpoint` from dragging unrelated characters and old history into recall.
+### Scenario current-state bridge
 
-Strict knowledge still applies to live continuity: a private fact is not injected into a scene containing an NPC who did not know it.
+EIDETIC can read a Scenario's own strongly marked moving-state Story Card internally even if that card has no triggers. Cards marked `MOVING STATE`, `CURRENT STATE` or equivalent can provide a compact baseline; cards marked `ARCHIVE`, `SUPERSEDED`, `FUTURE` or `AUTHOR PLAN` are demoted or rejected. EIDETIC never rewrites or duplicates those Scenario cards. Newer live play always wins.
 
-Use `/live` to verify the system. It reports durable live facts, Character-card Entry writes, Current Played Continuity Entry writes, Front Memory live-recall injections and the latest captured facts.
+### Character continuity
 
+Major character revelations still use the **Character Insight Ledger**. When the client preserves Story Card Notes metadata, EIDETIC mirrors a bounded human-readable block into that character's Notes. It no longer appends generic live-continuity blocks to Character **Entry**, so recurring cards do not grow with scene-by-scene clutter. The internal ledger remains authoritative if Notes cannot be persisted.
 
+### Upgrade cleanup
+
+When upgrading from an older schema, EIDETIC imports durable facts from its retired `Current Played Continuity` dashboard and old `[[EIDETIC LIVE CONTINUITY]]` Character Entry blocks, then removes/strips that generated clutter when the Story Card helper is available. The facts remain in internal memory.
+
+Use `/live` to inspect active durable facts, Character Insight counts, Notes mirrors, cached Scenario-current baselines and Front Memory injection counts.
 
 
 ## Adaptive detection and blank new Adventures
@@ -560,6 +571,8 @@ state, keeps history bootstrap open, scans Story Cards automatically, and begins
 memory storage on the first real action. No setup command or manual character list is required.
 
 
+
+> **Historical changelog:** Schema 13–17 notes below describe the evolution of EIDETIC. Where they mention a generated Current Played Continuity card or generic Character Entry blocks, **Schema 18 supersedes that behavior**.
 
 ## Schema 13 — Cross-scenario isolation and relevance
 
@@ -835,3 +848,14 @@ If an important reveal happens before a Character Story Card exists, EIDETIC kee
 ledger. If a matching Character card is added later, Schema 17 backfills the managed Notes
 block automatically.
 
+
+
+## Schema 18 — Clutterless Current Memory
+
+Schema 18 removes the generated current-continuity dashboard from normal operation and stops generic live-state mirroring into Character Entry. The engine now uses internal state + Front Memory as the functional current-memory path, while Character Notes are reserved for genuinely important character insights.
+
+The current-state selector was also hardened after a real long-running Adventure exposed low-value lines winning recall slots. Schema 18 rejects question-shaped statements, heavily penalizes transient promises/scene chatter, gives major discoveries and strategic state more weight, and supersedes duplicate course/destination facts.
+
+Scenario-authored current-state Story Cards can now be consumed internally even when they have no trigger keys. This gives creators a clean migration/baseline bridge without requiring another EIDETIC card. Archive, future-plan and superseded cards are explicitly demoted.
+
+The upgrade path imports durable data from older EIDETIC managed blocks before stripping/removing those generated blocks, so cleanup does not throw away continuity.
