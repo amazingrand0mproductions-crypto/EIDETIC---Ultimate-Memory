@@ -51,8 +51,10 @@ const EIDETIC_CONFIG = {
   ENABLE_NARRATIVE_RECALL: true,
   ABSTAIN_ON_EXPLICIT_RECALL_MISS: true,
 
-  USE_FRONT_MEMORY: true,
-  APPEND_CONTEXT_FALLBACK: false,
+  USE_FRONT_MEMORY: false, // Schema 19: never mutate Plot Essentials/state.memory; recall is appended in onModelContext
+  APPEND_CONTEXT_FALLBACK: true, // retained for compatibility; direct Context injection is now the primary path
+  ADDON_SAFE_MODE: true,
+  BOOTSTRAP_BATCH_ACTIONS: 24,
   REFRESH_RECALL_AFTER_OUTPUT: false,
 
   INCLUDE_RELEVANT_CARD_SEEDS: false,
@@ -118,7 +120,7 @@ const EIDETIC_CONFIG = {
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 18;
+  const SCHEMA_REVISION = 19;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -18099,9 +18101,9 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", storyCardQuickSig: "", storyCardScanTurn: -1, storyCardCount: -1, worldCardQuickSig: "", worldCardScanTurn: -1, worldCardCount: -1, currentCardSeedSig: "", currentCardSeedQuickSig: "", currentCardSeeds: [], currentCardSeedScanTurn: -1, currentCardSeedCardCount: -1, bootstrapDone: false, bootstrapImported: 0, activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null, configNotesPersistence: "unknown", needsSchema16CardCleanup: false, managedCardCleanupIndex: 0, managedCardImportDone: false, needsSchema17InsightMigration: false, insightMigrationDone: false, insightSyncSig: "", needsSchema18CardCleanup: false, liveDashboardRemoved: false, characterNotesPersistence: "unknown", characterNotesRetryTurn: 0, characterNoteExpected: null },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", storyCardQuickSig: "", storyCardScanTurn: -1, storyCardCount: -1, worldCardQuickSig: "", worldCardScanTurn: -1, worldCardCount: -1, currentCardSeedSig: "", currentCardSeedQuickSig: "", currentCardSeeds: [], currentCardSeedScanTurn: -1, currentCardSeedCardCount: -1, bootstrapDone: false, bootstrapImported: 0, bootstrapPending: false, bootstrapTargetCount: 0, bootstrapSeen: [], activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null, configNotesPersistence: "unknown", needsSchema16CardCleanup: false, managedCardCleanupIndex: 0, managedCardImportDone: false, needsSchema17InsightMigration: false, insightMigrationDone: false, insightSyncSig: "", needsSchema18CardCleanup: false, liveDashboardRemoved: false, characterNotesPersistence: "unknown", characterNotesRetryTurn: 0, characterNoteExpected: null },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
-      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0, characterInsights: 0, characterInsightNotes: 0, characterInsightRecalls: 0, characterInsightMigrations: 0, characterInsightSupersessions: 0, liveDashboardRemovals: 0, currentCardSeedScans: 0, currentCardSeedRecalls: 0, liveFactSupersessions: 0 },
+      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0, characterInsights: 0, characterInsightNotes: 0, characterInsightRecalls: 0, characterInsightMigrations: 0, characterInsightSupersessions: 0, liveDashboardRemovals: 0, currentCardSeedScans: 0, currentCardSeedRecalls: 0, liveFactSupersessions: 0, contextRecallAppends: 0, addonSafeRuns: 0, bootstrapBatches: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
     };
   }
@@ -18167,6 +18169,12 @@ const EIDETIC = (() => {
     if (!(typeof r.runtime.configCardId === "number" || typeof r.runtime.configCardId === "string")) r.runtime.configCardId = "";
     if (typeof r.runtime.bootstrapDone !== "boolean") r.runtime.bootstrapDone = !!((r.hot && r.hot.length) || (r.cold && r.cold.length) || (r.anchors && r.anchors.length) || (r.ledger && r.ledger.length));
     if (!Number.isFinite(r.runtime.bootstrapImported)) r.runtime.bootstrapImported = 0;
+    if (typeof r.runtime.bootstrapPending !== "boolean") r.runtime.bootstrapPending = false;
+    if (!Number.isFinite(r.runtime.bootstrapTargetCount)) r.runtime.bootstrapTargetCount = 0;
+    if (!Array.isArray(r.runtime.bootstrapSeen)) r.runtime.bootstrapSeen = [];
+    if (typeof r.runtime.contextRecallBlock !== "string") r.runtime.contextRecallBlock = "";
+    if (!Number.isFinite(r.runtime.contextRecallTurn)) r.runtime.contextRecallTurn = -1;
+    if (!Number.isFinite(r.runtime.contextRecallSeq)) r.runtime.contextRecallSeq = -1;
     if (typeof r.runtime.activationAnnounced !== "boolean") r.runtime.activationAnnounced = !!r.runtime.bootstrapDone;
     if (!Array.isArray(r.runtime.lastWorldEntities)) r.runtime.lastWorldEntities = [];
     if (!(typeof r.runtime.liveCardId === "number" || typeof r.runtime.liveCardId === "string")) r.runtime.liveCardId = "";
@@ -18987,7 +18995,7 @@ const EIDETIC = (() => {
       "🧠 EIDETIC — CONFIG GUIDE",
       "",
       "EIDETIC works automatically. You do not need commands, a setup card, or a character list.",
-      "EIDETIC creates only this Config Story Card. It does NOT create a separate Current Played Continuity card; moving continuity stays in internal memory/Front Memory so your Story Card list stays clean.",
+      "EIDETIC creates only this Config Story Card. It does NOT create a separate Current Played Continuity card; moving continuity stays in EIDETIC's private state and is injected only into the model Context when relevant, so your Story Card list stays clean.",
       "Important character revelations may be mirrored into that character card's Notes when the client permits it. The structured Character Insight Ledger remains authoritative even if Notes metadata is unavailable.",
       "The Entry contains only editable settings. This Notes section explains every option. Change only the value after = and keep the setting names unchanged.",
       "",
@@ -19065,10 +19073,12 @@ const EIDETIC = (() => {
       "Just play. EIDETIC observes, stores and retrieves continuity automatically.",
       "Commands are optional tools, not required setup.",
       "Phoenix/mobile note: slash commands use one tiny safe utility generation because stopping an Input hook causes AI Dungeon to show a script error.",
-      "A red context-warning triangle means some Plot Components did not fit their allocated context; EIDETIC keeps its own Front Memory compact but cannot suppress platform allocation warnings caused by other large/triggered components.",
+      "Added-script safety: EIDETIC never writes Plot Essentials, Author's Note or state.memory; recall is injected only during the Context hook.",
+      "A red context-warning triangle means some Plot Components did not fit their allocated context; EIDETIC keeps its own recall compact and cannot suppress platform allocation warnings caused by other large/triggered components.",
       "",
       "🛠️ OPTIONAL COMMANDS",
       "/eidetic or /memory — quick status",
+      "/config — show active settings and Config-card status",
       "/memstats — archive statistics",
       "/memdetect — detection status",
       "/roster — tracked NPCs",
@@ -19139,7 +19149,7 @@ const EIDETIC = (() => {
     const r = root();
     if (!r || !r.runtime || r.runtime.configCardWarned) return;
     r.runtime.configCardWarned = true;
-    const msg = "EIDETIC is running, but its Config & Guide card could not be created. Enable Story Cards/Memory Bank if you want the in-game settings card.";
+    const msg = "EIDETIC is running, but its Config & Guide card could not be created. Core memory remains active; use /config to inspect settings.";
     if (typeof state !== "undefined" && state && !safeText(state.message)) setMessage(msg);
     else debugLog(msg);
   }
@@ -21907,6 +21917,7 @@ const EIDETIC = (() => {
 
     const maxActions = Math.max(0, Number(EIDETIC_CONFIG.BOOTSTRAP_HISTORY_ACTIONS) || 0);
     const maxChars = Math.max(0, Number(EIDETIC_CONFIG.BOOTSTRAP_HISTORY_CHARS) || 0);
+    const batchSize = Math.max(4, Math.min(48, Number(EIDETIC_CONFIG.BOOTSTRAP_BATCH_ACTIONS) || 24));
     const picked = [];
     let chars = 0;
     for (let i = history.length - 1; i >= 0 && picked.length < maxActions; i--) {
@@ -21922,40 +21933,58 @@ const EIDETIC = (() => {
         if (picked.length) break;
         txt = txt.slice(-maxChars);
       }
-      picked.unshift({ item: item, text: txt, index: i });
+      picked.unshift({ item: item, text: txt, index: i, sig: hash(safeText(item.type)+"|"+i+"|"+txt) });
       chars += txt.length;
     }
 
-    const endTurn = currentTurn();
-    const baseTurn = Math.max(0, endTurn - picked.length);
-    let imported = 0;
-    const previousOverride = TURN_OVERRIDE;
-    const previousOrigin = INGEST_ORIGIN;
-    const previousCapture = BOOTSTRAP_CAPTURE_LIVE;
-    try {
-      INGEST_ORIGIN = "bootstrap";
-      for (let i = 0; i < picked.length; i++) {
-        TURN_OVERRIDE = baseTurn + i;
-        // Backfill current continuity only from the newest slice of an existing Adventure.
-        // Older imported history remains searchable episodic/world memory but cannot flood
-        // the live-current Story Card.
-        BOOTSTRAP_CAPTURE_LIVE = i >= Math.max(0, picked.length - 12);
-        ingest(picked[i].text, historyActionKind(picked[i].item));
-        imported++;
-      }
-    } finally {
-      TURN_OVERRIDE = previousOverride;
-      INGEST_ORIGIN = previousOrigin;
-      BOOTSTRAP_CAPTURE_LIVE = previousCapture;
+    if(!picked.length){
+      r.runtime.bootstrapTargetCount=0;
+      return 0;
     }
-    // A brand-new Adventure can invoke EIDETIC before history contains a playable action.
-    // Keep bootstrap open in that empty state; the first real input switches to live tracking.
-    if (imported > 0) r.runtime.bootstrapDone = true;
-    r.runtime.bootstrapImported = imported;
-    r.runtime.recallCacheKey = "";
-    r.runtime.recallCacheBlock = "";
-    r.runtime.recallPayloadSig = "";
-    if (imported > 0) syncLiveStoryCards(true);
+
+    if(!Array.isArray(r.runtime.bootstrapSeen))r.runtime.bootstrapSeen=[];
+    const seen=new Set(r.runtime.bootstrapSeen);
+    r.runtime.bootstrapTargetCount=picked.length;
+    r.runtime.bootstrapPending=true;
+
+    const remaining=picked.filter(x=>!seen.has(x.sig));
+    if(!remaining.length){
+      r.runtime.bootstrapDone=true;
+      r.runtime.bootstrapPending=false;
+      r.runtime.bootstrapSeen=[];
+      r.runtime.recallCacheKey=""; r.runtime.recallCacheBlock=""; r.runtime.recallPayloadSig="";
+      return 0;
+    }
+
+    // Import a small oldest-first slice per hook. Added/published scripts share the same
+    // 2-second sandbox limit as scenario scripts; incremental import avoids a one-turn
+    // timeout when EIDETIC is attached to a long existing Adventure.
+    const batch=remaining.slice(0,batchSize);
+    const endTurn=currentTurn(), baseTurn=Math.max(0,endTurn-picked.length);
+    let imported=0;
+    const previousOverride=TURN_OVERRIDE, previousOrigin=INGEST_ORIGIN, previousCapture=BOOTSTRAP_CAPTURE_LIVE;
+    try{
+      INGEST_ORIGIN="bootstrap";
+      for(let bi=0;bi<batch.length;bi++){
+        const x=batch[bi], pos=picked.findIndex(y=>y.sig===x.sig);
+        TURN_OVERRIDE=baseTurn+Math.max(0,pos);
+        BOOTSTRAP_CAPTURE_LIVE=pos>=Math.max(0,picked.length-12);
+        ingest(x.text,historyActionKind(x.item));
+        imported++;
+        seen.add(x.sig);
+      }
+    }finally{
+      TURN_OVERRIDE=previousOverride; INGEST_ORIGIN=previousOrigin; BOOTSTRAP_CAPTURE_LIVE=previousCapture;
+    }
+
+    r.runtime.bootstrapSeen=Array.from(seen).slice(-maxActions);
+    r.runtime.bootstrapImported=Number(r.runtime.bootstrapImported||0)+imported;
+    const still=picked.some(x=>!seen.has(x.sig));
+    r.runtime.bootstrapDone=!still;
+    r.runtime.bootstrapPending=still;
+    if(!still)r.runtime.bootstrapSeen=[];
+    r.runtime.recallCacheKey=""; r.runtime.recallCacheBlock=""; r.runtime.recallPayloadSig="";
+    if(imported>0)r.stats.bootstrapBatches=Number(r.stats.bootstrapBatches||0)+1;
     return imported;
   }
 
@@ -21964,8 +21993,9 @@ const EIDETIC = (() => {
     if (!r || r.runtime.activationAnnounced || !EIDETIC_CONFIG.ENABLED) return;
     r.runtime.activationAnnounced = true;
     const existing = Number(imported) > 0 || currentTurn() > 1;
+    const totalImported=Number(r.runtime.bootstrapImported||0);
     const msg = existing
-      ? "EIDETIC active — existing Adventure detected; imported " + (Number(imported) || 0) + " recent exposed actions and will remember new turns automatically."
+      ? "EIDETIC active — existing Adventure detected; imported " + totalImported + " recent exposed actions so far and will remember new turns automatically."
       : "EIDETIC active — memory tracking is automatic. No command is required.";
     if (typeof state !== "undefined" && state && safeText(state.message).trim()) {
       if (typeof log === "function") log("EIDETIC: " + msg);
@@ -22014,8 +22044,8 @@ const EIDETIC = (() => {
     const nominal=Math.min(EIDETIC_CONFIG.RECALL_BLOCK_MAX_CHARS,Math.max(EIDETIC_CONFIG.RECALL_MIN_CHARS,Math.floor(maxChars*EIDETIC_CONFIG.RECALL_CONTEXT_FRACTION)));
     const headroom=Math.floor(maxChars*EIDETIC_CONFIG.CONTEXT_HEADROOM_FRACTION);
     const freeAfterMemory=Math.max(0,maxChars-memoryLength-headroom);
-    // Front Memory is Required and never truncated by AI Dungeon, so reserve room for
-    // history/cards/model components instead of filling all apparently unused context.
+    // Recall is appended in onModelContext. Reserve room for user-authored required
+    // components, recent history, and triggered Story Cards instead of filling the window.
     let budget=Math.min(nominal,Math.max(280,Math.floor(freeAfterMemory*0.16)));
     if(memoryLength>maxChars*0.50)budget=Math.min(budget,700);
     else if(memoryLength>maxChars*0.35)budget=Math.min(budget,1000);
@@ -22277,31 +22307,35 @@ const EIDETIC = (() => {
     return existing.replace(re, "\n").replace(/\n{3,}/g, "\n\n").trim();
   }
 
+  // Schema 19 add-on safety:
+  // Do NOT write state.memory.context/authorsNote/frontMemory. AI Dungeon protects
+  // Plot Essentials from added scripts, and some clients report any state.memory mutation
+  // as an attempted Plot Essentials write. EIDETIC stores recall in its own persistent
+  // state and injects the bounded block only during onModelContext.
   function setFrontMemory(block) {
-    if (!EIDETIC_CONFIG.USE_FRONT_MEMORY || typeof state === "undefined" || !state) return;
-    if (!state.memory || typeof state.memory !== "object") state.memory = {};
-    const other = removeOurFrontMemory(state.memory.frontMemory || "");
-    state.memory.frontMemory = [other, block].filter(Boolean).join("\n").trim();
+    const r=root(); if(!r||!r.runtime)return;
+    r.runtime.contextRecallBlock=safeText(block);
+    r.runtime.contextRecallTurn=currentTurn();
+    r.runtime.contextRecallSeq=Number(r.seq||0);
   }
 
   function clearFrontMemory() {
-    if (typeof state === "undefined" || !state || !state.memory || typeof state.memory !== "object") return;
-    state.memory.frontMemory = removeOurFrontMemory(state.memory.frontMemory || "");
+    const r=root(); if(!r||!r.runtime)return;
+    r.runtime.contextRecallBlock="";
+    r.runtime.contextRecallTurn=-1;
+    r.runtime.contextRecallSeq=-1;
   }
 
   function currentFrontRecallBlock() {
-    if (typeof state === "undefined" || !state || !state.memory) return "";
-    const fm = safeText(state.memory.frontMemory || "");
-    const re = /\[\[EIDETIC_RECALL[^\n]*\]\][\s\S]*?\[\[\/EIDETIC_RECALL\]\]/gi;
-    let m, last = "";
-    while ((m = re.exec(fm)) !== null) {
-      const firstLine = m[0].split("\n", 1)[0];
-      const turnMarker = new RegExp("\\bturn=" + currentTurn() + "(?:\\s|\\])", "i");
-      const r = root();
-      const seqMarker = new RegExp("\\bseq=" + (r ? (r.seq || 0) : 0) + "(?:\\s|\\])", "i");
-      if (turnMarker.test(firstLine) && seqMarker.test(firstLine)) last = m[0];
-    }
-    return last;
+    const r=root(); if(!r||!r.runtime)return "";
+    const block=safeText(r.runtime.contextRecallBlock);
+    if(!block)return "";
+    if(Number(r.runtime.contextRecallTurn)===currentTurn()&&Number(r.runtime.contextRecallSeq)===Number(r.seq||0))return block;
+    const firstLine=block.split("\n",1)[0];
+    const turnMarker=new RegExp("\\bturn="+currentTurn()+"(?:\\s|\\])","i");
+    const seqMarker=new RegExp("\\bseq="+Number(r.seq||0)+"(?:\\s|\\])","i");
+    if(turnMarker.test(firstLine)&&seqMarker.test(firstLine))return block;
+    return "";
   }
 
   function currentRecallAlreadyInText(text, block) {
@@ -22310,6 +22344,58 @@ const EIDETIC = (() => {
     if (!m) return safeText(text).indexOf(block) >= 0;
     const marker = new RegExp("\\[\\[EIDETIC_RECALL\\s+rev=" + escapeRe(m[1]) + "(?:\\s|\\])", "i");
     return marker.test(safeText(text));
+  }
+
+  function appendRecallToContext(text, block) {
+    let base=removeOurFrontMemory(stripCommandArtifactsFromContext(text));
+    block=safeText(block).trim();
+    if(!block)return base;
+
+    let maxChars=(typeof info!=="undefined"&&info&&Number.isFinite(info.maxChars))?Math.max(0,Number(info.maxChars)):0;
+    if(!maxChars)return base+(base.endsWith("\n")?"":"\n")+block;
+
+    const sep=base?"\n":"";
+    if(base.length+sep.length+block.length<=maxChars)return base+sep+block;
+
+    const memoryLength=(typeof info!=="undefined"&&info&&Number.isFinite(info.memoryLength))
+      ?Math.max(0,Math.min(base.length,Number(info.memoryLength))):0;
+    const prefix=memoryLength?base.slice(0,memoryLength):"";
+    const dynamic=memoryLength?base.slice(memoryLength):base;
+    const delimiter=(prefix&&dynamic)?"\n":"";
+    const blockSep=(prefix||dynamic)?"\n":"";
+    const fixed=prefix.length+delimiter.length+blockSep.length+block.length;
+    let room=Math.max(0,maxChars-fixed);
+
+    if(room<256&&block.length>420){
+      const target=Math.max(280,Math.min(block.length,Math.floor(maxChars*0.045)));
+      const tail="\n"+CLOSE;
+      const parts=block.split("\n");
+      const head=parts.slice(0,2).join("\n");
+      const bodyLines=parts.slice(2,-1);
+      let compact=head;
+      for(let i=0;i<bodyLines.length;i++){
+        const candidate=compact+"\n"+bodyLines[i]+tail;
+        if(candidate.length<=target)compact+="\n"+bodyLines[i];
+        else{
+          const left=Math.max(0,target-compact.length-tail.length-2);
+          if(left>=80)compact+="\n"+displayText(bodyLines[i],left);
+          break;
+        }
+      }
+      block=compact+tail;
+      room=Math.max(0,maxChars-(prefix.length+delimiter.length+blockSep.length+block.length));
+    }
+
+    const kept=room>0?dynamic.slice(-room):"";
+    const pieces=[];
+    if(prefix)pieces.push(prefix);
+    if(kept)pieces.push(kept);
+    let out=pieces.join(pieces.length>1?"\n":"");
+    if(out&&block)out+="\n";
+    out+=block;
+    if(out.length>maxChars)out=out.slice(-maxChars);
+    const r=root(); if(r&&r.stats)r.stats.contextRecallAppends=Number(r.stats.contextRecallAppends||0)+1;
+    return out;
   }
 
   function scrubLeak(text) {
@@ -22370,7 +22456,7 @@ const EIDETIC = (() => {
     const t = safeText(text);
     return t.indexOf(COMMAND_INPUT_MARKER) >= 0 ||
       /^\s*EIDETIC\s*[•:-]/im.test(t) ||
-      /^\s*\/(?:eidetic|memory|remember|recall|focus|roster|world|timeline|entity|live|memstats|memdetect|memdebug|memclear)\b/im.test(t);
+      /^\s*\/(?:eidetic|memory|config|remember|recall|focus|roster|world|timeline|entity|live|memstats|memdetect|memdebug|memclear)\b/im.test(t);
   }
 
   function stripCommandArtifactsFromContext(text) {
@@ -22378,7 +22464,7 @@ const EIDETIC = (() => {
     if (!t || !isCommandArtifact(t)) return t;
     t = t.replace(new RegExp("^.*" + escapeRe(COMMAND_INPUT_MARKER) + ".*(?:\\r?\\n|$)", "gmi"), "");
     t = t.replace(/^\s*EIDETIC\s*[•:-].*(?:\r?\n|$)/gmi, "");
-    t = t.replace(/^\s*>?\s*(?:You\s+(?:say\s+)?["“]?)?\/(?:eidetic|memory|remember|recall|focus|roster|world|timeline|entity|live|memstats|memdetect|memdebug|memclear)\b.*(?:\r?\n|$)/gmi, "");
+    t = t.replace(/^\s*>?\s*(?:You\s+(?:say\s+)?["“]?)?\/(?:eidetic|memory|config|remember|recall|focus|roster|world|timeline|entity|live|memstats|memdetect|memdebug|memclear)\b.*(?:\r?\n|$)/gmi, "");
     return t.replace(/\n{3,}/g, "\n\n").trim();
   }
 
@@ -22399,7 +22485,7 @@ const EIDETIC = (() => {
   function handleCommand(raw) {
     const r = root();
     const s = commandText(raw);
-    if (!/^\/(?:eidetic|memory|remember|recall|focus|roster|world|timeline|entity|live|memstats|memdetect|memdebug|memclear)\b/i.test(s)) return null;
+    if (!/^\/(?:eidetic|memory|config|remember|recall|focus|roster|world|timeline|entity|live|memstats|memdetect|memdebug|memclear)\b/i.test(s)) return null;
     const m = s.match(/^\/(\w+)\s*(.*)$/);
     if (!m) return null;
     const cmd = m[1].toLowerCase();
@@ -22409,6 +22495,18 @@ const EIDETIC = (() => {
     if (cmd === "eidetic" || cmd === "memory") {
       const chars = Object.keys(r.chars).length;
       setMessage("EIDETIC • " + chars + " characters • " + r.hot.length + " hot memories • " + r.cold.length + " cold memories • " + r.anchors.length + " anchors • " + r.ledger.length + " current-state facts • " + (r.liveFacts||[]).length + " live continuity facts • " + (r.insights||[]).length + " character insights • " + (r.world ? Object.keys(r.world.entities||{}).length : 0) + " world entities • " + (r.world ? r.world.timeline.length : 0) + " timeline events • existing-history import " + Number(r.runtime.bootstrapImported || 0) + " actions • turn " + currentTurn());
+      return finishCommand(cmd);
+    }
+
+    if (cmd === "config") {
+      // A manual /config request is also a safe retry signal. This is useful when a mobile
+      // client initially refused Story Card persistence but the user later opens the same
+      // Adventure on desktop/PC where card editing works.
+      if(r&&r.runtime){r.runtime.cardRetryTurn=0;if(r.runtime.cardPersistence==="degraded")r.runtime.cardPersistence="unknown";}
+      const c=ensureConfigCard();
+      const src=c?configSettingsSource(c):configCardEntry();
+      const status=c?"Config Story Card available":"Config Story Card unavailable; internal defaults active";
+      setMessage("EIDETIC • "+status+" • "+cleanText(src).replace(/\n/g," • "));
       return finishCommand(cmd);
     }
 
@@ -22536,7 +22634,6 @@ const EIDETIC = (() => {
         return finishCommand(cmd);
       }
       delete state[ROOT];
-      if (state.memory && state.memory.frontMemory) state.memory.frontMemory = removeOurFrontMemory(state.memory.frontMemory);
       setMessage("EIDETIC archive cleared.");
       return finishCommand(cmd);
     }
@@ -22625,7 +22722,11 @@ const EIDETIC = (() => {
 
   function run(hook, text) {
     init();
-    if (!EIDETIC_CONFIG.ENABLED) { clearFrontMemory(); return { text: text, stop: false }; }
+    if (!EIDETIC_CONFIG.ENABLED) {
+      clearFrontMemory();
+      if (hook === "context" || hook === "contextAppend") return { text: removeOurFrontMemory(stripCommandArtifactsFromContext(text)), stop: false };
+      return { text: text, stop: false };
+    }
     const r = root();
 
     if (hook === "input") {
@@ -22635,8 +22736,9 @@ const EIDETIC = (() => {
         return command;
       }
       ingest(text, "input");
-      // Once real play begins, do not later re-import that same first action from history.
-      if (!r.runtime.bootstrapDone && cleanText(text)) r.runtime.bootstrapDone = true;
+      // A brand-new Adventure has no history to backfill, so its first real input closes
+      // bootstrap. Existing long Adventures keep importing in small batches across hooks.
+      if (!r.runtime.bootstrapDone && cleanText(text) && !r.runtime.bootstrapPending && Number(r.runtime.bootstrapTargetCount||0)===0) r.runtime.bootstrapDone = true;
       const block = buildRecall(text);
       if (block) setFrontMemory(block);
       else clearFrontMemory();
@@ -22652,7 +22754,7 @@ const EIDETIC = (() => {
         return { text: utilityCommandContext(), stop: false };
       }
 
-      let contextText = stripCommandArtifactsFromContext(text);
+      let contextText = removeOurFrontMemory(stripCommandArtifactsFromContext(text));
       let block = currentFrontRecallBlock();
       if (!block) block = buildRecall("");
       if (!block) {
@@ -22661,15 +22763,10 @@ const EIDETIC = (() => {
         if (noHistory && noArchive) block = idleActivationRecallBlock();
       }
       if (block) {
-        setFrontMemory(block);
-        // Front Memory is an official Required context component and is always included
-        // in full. Appending the same block to Context duplicates tokens and can trigger
-        // false-looking context warnings, so fallback append is disabled by default.
-        if (EIDETIC_CONFIG.APPEND_CONTEXT_FALLBACK && !currentRecallAlreadyInText(contextText, block)) {
-          const out = safeText(contextText) + (safeText(contextText).endsWith("\n") ? "" : "\n") + block;
-          debugLog("context fallback appended " + block.length + " chars");
-          return { text: out, stop: false };
-        }
+        setFrontMemory(block); // runtime buffer only; never touches state.memory
+        const out=appendRecallToContext(contextText,block);
+        debugLog("context recall appended " + block.length + " chars");
+        return { text: out, stop: false };
       }
       return { text: contextText, stop: false };
     }
@@ -22756,6 +22853,7 @@ const EIDETIC = (() => {
     persistStoryCard: persistStoryCard,
     stripCommandArtifactsFromContext: stripCommandArtifactsFromContext,
     cardSyncAllowed: cardSyncAllowed,
+    appendRecallToContext: appendRecallToContext,
   };
 
   return run;

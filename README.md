@@ -520,18 +520,26 @@ That can make a conversation from hundreds or thousands of actions ago affect wh
 
 ### **The story moves forward. The characters keep the past.**
 
-## Current Architecture — Schema 18
+## Current Architecture — Schema 19
 
-EIDETIC now keeps **moving played continuity internal** instead of creating a second Story Card as a dashboard. The only EIDETIC Story Card created automatically is **Config & Guide**. This keeps the Story Card list clean and avoids duplicating information that EIDETIC already supplies through Front Memory.
+Schema 19 is designed to work both as a Scenario-owned script and in AI Dungeon's newer **added-script** environment without attempting to modify the Adventure's Plot Essentials. EIDETIC's archive lives in its own persistent `state.__EIDETIC` object. It does **not** use Plot Essentials, Author's Note, or `state.memory` as storage.
 
-### Clutterless current memory
+The only EIDETIC Story Card created automatically is **Config & Guide**. It is configuration/UI, not the memory database. If the client refuses Story Card creation, EIDETIC continues with internal defaults and `/config` reports the active settings.
 
-- Significant played developments are stored in `state.__EIDETIC.liveFacts`.
-- Current facts are ranked by durability, strategic importance, relevance and recency.
+### Add-on-safe current memory
+
+- Significant played developments are stored internally in `state.__EIDETIC.liveFacts`, the current-state ledger, world memory and character insight ledger.
+- At generation time EIDETIC appends one bounded `[[EIDETIC_RECALL]]` block through the **Context hook** (`onModelContext`).
+- Schema 19 never writes `state.memory.context`, `state.memory.authorsNote`, or `state.memory.frontMemory`.
+- Old EIDETIC recall blocks left by pre-Schema-19 builds are stripped before the newest block is appended, so upgrades do not duplicate memory.
+- Current facts are ranked by durability, strategic importance, topical relevance and recency.
 - Questions, transient dialogue, poses and low-value scene texture are rejected from current-state recall.
-- Newer confirmed state supersedes stale state in facets such as the active mission course.
+- Newer confirmed state supersedes stale state in facets such as mission course, location, relationship/status and major threat state.
 - `FACT`, `CLAIM`, `BELIEF`, `INFERENCE`, `UNCONFIRMED` and `NEGATED` remain distinct.
-- Current recall is injected through **Front Memory**; it does not depend on a Story Card trigger.
+
+### Long-Adventure timeout protection
+
+When EIDETIC is attached to an existing Adventure, it no longer tries to import the entire exposed history in one hook. Existing history is imported in small batches (24 actions by default) across successive hooks. This dramatically reduces the first-turn timeout spike while still converging on the same archive. New play is remembered immediately while background import continues.
 
 ### Scenario current-state bridge
 
@@ -539,14 +547,17 @@ EIDETIC can read a Scenario's own strongly marked moving-state Story Card intern
 
 ### Character continuity
 
-Major character revelations still use the **Character Insight Ledger**. When the client preserves Story Card Notes metadata, EIDETIC mirrors a bounded human-readable block into that character's Notes. It no longer appends generic live-continuity blocks to Character **Entry**, so recurring cards do not grow with scene-by-scene clutter. The internal ledger remains authoritative if Notes cannot be persisted.
+Major character revelations use the **Character Insight Ledger**. When the client preserves Story Card Notes metadata, EIDETIC mirrors a bounded human-readable block into that character's Notes. It does not append generic live-continuity blocks to Character **Entry**, so recurring cards do not grow with scene-by-scene clutter. The internal ledger remains authoritative if Notes cannot be persisted.
+
+### Story Card failure safety
+
+Story Cards are optional integration surfaces, not the archive. Config-card creation and Character-Notes mirroring use the Story Card API when available and back off if persistence fails. A mobile/client Story Card problem therefore does not disable EIDETIC memory. Running `/config` manually also forces a safe Config-card retry, useful after moving an Adventure from a client where card creation failed to desktop/PC.
 
 ### Upgrade cleanup
 
 When upgrading from an older schema, EIDETIC imports durable facts from its retired `Current Played Continuity` dashboard and old `[[EIDETIC LIVE CONTINUITY]]` Character Entry blocks, then removes/strips that generated clutter when the Story Card helper is available. The facts remain in internal memory.
 
-Use `/live` to inspect active durable facts, Character Insight counts, Notes mirrors, cached Scenario-current baselines and Front Memory injection counts.
-
+Use `/live` to inspect active durable facts, Character Insight counts, Notes mirrors, cached Scenario-current baselines and recall injections. Use `/config` to inspect settings or retry Config-card creation.
 
 ## Adaptive detection and blank new Adventures
 
@@ -566,13 +577,11 @@ work immediately:
 but it is no longer the default.
 
 A completely blank new Adventure naturally has no event to remember yet. EIDETIC now
-writes a tiny `EIDETIC ACTIVE` initialization block to dynamic front memory on that blank
-state, keeps history bootstrap open, scans Story Cards automatically, and begins normal
-memory storage on the first real action. No setup command or manual character list is required.
+creates a tiny `EIDETIC ACTIVE` recall block for the Context hook on that blank state, keeps history bootstrap open, scans Story Cards automatically, and begins normal memory storage on the first real action. No setup command or manual character list is required.
 
 
 
-> **Historical changelog:** Schema 13–17 notes below describe the evolution of EIDETIC. Where they mention a generated Current Played Continuity card or generic Character Entry blocks, **Schema 18 supersedes that behavior**.
+> **Historical changelog:** Schema 13–18 notes below describe older designs. **Schema 19 supersedes any historical references to Front Memory/state.memory writes, a generated Current Played Continuity dashboard, or generic Character Entry mirroring.**
 
 ## Schema 13 — Cross-scenario isolation and relevance
 
