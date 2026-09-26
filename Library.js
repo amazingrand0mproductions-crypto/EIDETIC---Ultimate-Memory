@@ -19,7 +19,7 @@ const EIDETIC_CONFIG = {
   NAME_STRONG_PROMOTION_SCORE: 7,
   NAME_CANDIDATE_TTL: 80,
   MAX_NAME_CANDIDATES: 240,
-  MAX_TRACKED_CHARACTERS: 80,
+  MAX_TRACKED_CHARACTERS: 120,
   MAX_ACTIVE_CHARACTERS: 3,
   MAX_ALIASES_PER_CHARACTER: 24,
   PRESENCE_HOLD_TURNS: 3,
@@ -98,6 +98,8 @@ const EIDETIC_CONFIG = {
   // Scenario-authored moving-state Story Cards may be read internally even when they have
   // no trigger keys. They are never rewritten or duplicated by EIDETIC.
   CURRENT_CARD_SEED_LIMIT: 2,
+  CURRENT_CARD_SEED_MODE: "explicit", // only cards deliberately marked for EIDETIC may become global baselines
+  CURRENT_CARD_SEED_MARKER: "%__EIDETIC_CURRENT_SEED_20__%",
   CURRENT_CARD_SEED_CHARS: 300,
   CURRENT_CARD_SEED_SCAN_INTERVAL: 6,
   STORY_CARD_SCAN_INTERVAL: 6,
@@ -106,21 +108,24 @@ const EIDETIC_CONFIG = {
   CHARACTER_INSIGHT_LIMIT: 900,
   CHARACTER_INSIGHT_RECALL: 2,
   CHARACTER_INSIGHT_CHARS: 280,
-  CHARACTER_NOTE_INSIGHTS: 10,
-  CHARACTER_NOTE_BLOCK_CHARS: 3600,
+  CHARACTER_NOTE_INSIGHTS: 6,
+  CHARACTER_NOTE_BLOCK_CHARS: 2400,
+  SYNC_CHARACTER_PROFILE_DELTAS: true,
+  CHARACTER_PROFILE_INSIGHTS: 4,
+  CHARACTER_PROFILE_BLOCK_CHARS: 900,
 
   // Phoenix/mobile-safe integration.
   COMMAND_MODE: "soft", // soft = no Input stop/error; command result is returned as a utility line
   LEGACY_STATE_MESSAGE: false, // Phoenix docs say state.message is not implemented
   STORY_CARD_RETRY_TURNS: 8,
-  MAX_CHARACTER_CARD_ENTRY_CHARS: 1300,
+  MAX_CHARACTER_CARD_ENTRY_CHARS: 3200,
   CONTEXT_HEADROOM_FRACTION: 0.18,
 };
 
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 19;
+  const SCHEMA_REVISION = 21;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -18101,9 +18106,9 @@ const EIDETIC = (() => {
       manualFocus: [],
       playerNames: [],
       ambiguousFirstNames: [],
-      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", storyCardQuickSig: "", storyCardScanTurn: -1, storyCardCount: -1, worldCardQuickSig: "", worldCardScanTurn: -1, worldCardCount: -1, currentCardSeedSig: "", currentCardSeedQuickSig: "", currentCardSeeds: [], currentCardSeedScanTurn: -1, currentCardSeedCardCount: -1, bootstrapDone: false, bootstrapImported: 0, bootstrapPending: false, bootstrapTargetCount: 0, bootstrapSeen: [], activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null, configNotesPersistence: "unknown", needsSchema16CardCleanup: false, managedCardCleanupIndex: 0, managedCardImportDone: false, needsSchema17InsightMigration: false, insightMigrationDone: false, insightSyncSig: "", needsSchema18CardCleanup: false, liveDashboardRemoved: false, characterNotesPersistence: "unknown", characterNotesRetryTurn: 0, characterNoteExpected: null },
+      runtime: { lastMaxChars: 0, recallRev: 0, recallPayloadSig: "", recallCacheKey: "", recallCacheBlock: "", storyCardSig: "", storyCardQuickSig: "", storyCardScanTurn: -1, storyCardCount: -1, worldCardQuickSig: "", worldCardScanTurn: -1, worldCardCount: -1, currentCardSeedSig: "", currentCardSeedQuickSig: "", currentCardSeeds: [], currentCardSeedScanTurn: -1, currentCardSeedCardCount: -1, bootstrapDone: false, bootstrapImported: 0, bootstrapPending: false, bootstrapTargetCount: 0, bootstrapSeen: [], activationAnnounced: false, lastWorldEntities: [], liveCardId: "", liveSyncTurn: -1, liveSyncSig: "", identityRepairDone: false, pendingCommand: null, lastMessage: "", cardPersistence: "unknown", cardWriteFailures: 0, cardRetryTurn: 0, cardExpected: null, configNotesPersistence: "unknown", needsSchema16CardCleanup: false, managedCardCleanupIndex: 0, managedCardImportDone: false, needsSchema17InsightMigration: false, insightMigrationDone: false, insightSyncSig: "", needsSchema18CardCleanup: false, liveDashboardRemoved: false, needsSchema20CardCleanup: false, schema20CleanupIndex: 0, schema20RescanDone: true, profileDeltaSig: "", profileDeltaImportDone: false, legacyManagedQuarantineDone: false, characterNotesPersistence: "unknown", characterNotesRetryTurn: 0, characterNoteExpected: null },
       last: { turn: 0, inputHash: "", outputHash: "", inputTurn: -1, outputTurn: -1, recallSig: "" },
-      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0, characterInsights: 0, characterInsightNotes: 0, characterInsightRecalls: 0, characterInsightMigrations: 0, characterInsightSupersessions: 0, liveDashboardRemovals: 0, currentCardSeedScans: 0, currentCardSeedRecalls: 0, liveFactSupersessions: 0, contextRecallAppends: 0, addonSafeRuns: 0, bootstrapBatches: 0 },
+      stats: { stored: 0, retries: 0, undos: 0, recalls: 0, promoted: 0, coldMoved: 0, migrations: 0, retryPurges: 0, suppressedRepeats: 0, mergedSegments: 0, detectorObserved: 0, detectorRejected: 0, detectorPruned: 0, worldCandidateObserved: 0, worldCandidatePromoted: 0, worldCandidateRejected: 0, worldCandidatePruned: 0, worldTypeConflicts: 0, stateFacts: 0, stateReplacements: 0, statePruned: 0, worldEntities: 0, worldFacts: 0, worldEvents: 0, timeJumps: 0, worldPruned: 0, liveFacts: 0, cardNoteWrites: 0, cardEntryWrites: 0, liveCardWrites: 0, liveRecallInjects: 0, commandTurns: 0, cardWriteFailures: 0, contextTrimAvoided: 0, outputPassThrough: 0, outputModified: 0, identityRepairs: 0, sceneResets: 0, bootstrapLiveFacts: 0, characterInsights: 0, characterInsightNotes: 0, characterInsightRecalls: 0, characterInsightMigrations: 0, characterInsightSupersessions: 0, characterProfileWrites: 0, characterCardSelectionRepairs: 0, schema20CardCleanups: 0, schema20RescanFacts: 0, schema20RescanInsights: 0, profileDeltaImports: 0, legacyManagedQuarantined: 0, legacyManagedPurges: 0, liveDashboardRemovals: 0, currentCardSeedScans: 0, currentCardSeedRecalls: 0, liveFactSupersessions: 0, contextRecallAppends: 0, addonSafeRuns: 0, bootstrapBatches: 0 },
       debug: !!EIDETIC_CONFIG.DEBUG,
     };
   }
@@ -18162,6 +18167,12 @@ const EIDETIC = (() => {
     if (!Number.isFinite(r.runtime.currentCardSeedScanTurn)) r.runtime.currentCardSeedScanTurn = -1;
     if (!Number.isFinite(r.runtime.currentCardSeedCardCount)) r.runtime.currentCardSeedCardCount = -1;
     if (typeof r.runtime.needsSchema18CardCleanup !== "boolean") r.runtime.needsSchema18CardCleanup = false;
+    if (typeof r.runtime.needsSchema20CardCleanup !== "boolean") r.runtime.needsSchema20CardCleanup = false;
+    if (!Number.isFinite(r.runtime.schema20CleanupIndex)) r.runtime.schema20CleanupIndex = 0;
+    if (typeof r.runtime.profileDeltaSig !== "string") r.runtime.profileDeltaSig = "";
+    if (typeof r.runtime.profileDeltaImportDone !== "boolean") r.runtime.profileDeltaImportDone = false;
+    if (typeof r.runtime.legacyManagedQuarantineDone !== "boolean") r.runtime.legacyManagedQuarantineDone = false;
+    if (typeof r.runtime.schema20RescanDone !== "boolean") r.runtime.schema20RescanDone = true;
     if (typeof r.runtime.liveDashboardRemoved !== "boolean") r.runtime.liveDashboardRemoved = false;
     if (typeof r.runtime.characterNotesPersistence !== "string") r.runtime.characterNotesPersistence = "unknown";
     if (!Number.isFinite(r.runtime.characterNotesRetryTurn)) r.runtime.characterNotesRetryTurn = 0;
@@ -18236,6 +18247,53 @@ const EIDETIC = (() => {
         if(latestCourse&&latestCourse!==f){latestCourse.superseded=true;latestCourse.supersededBy=f.id||"schema18-migration";r.stats.liveFactSupersessions=Number(r.stats.liveFactSupersessions||0)+1;}
         latestCourse=f;
       }
+    }
+    if (previousSchema > 0 && previousSchema < 20) {
+      // Schema 20 removes legacy per-turn character Entry clutter, invalidates automatic
+      // scenario-baseline seeds, and rebuilds important-character mirrors with stricter rules.
+      r.runtime.needsSchema20CardCleanup = true;
+      r.runtime.schema20CleanupIndex = 0;
+      r.runtime.currentCardSeeds = [];
+      r.runtime.currentCardSeedSig = "";
+      r.runtime.currentCardSeedQuickSig = "";
+      r.runtime.currentCardSeedScanTurn = -1;
+      r.runtime.currentCardSeedCardCount = -1;
+      r.runtime.insightSyncSig = "";
+      r.runtime.profileDeltaSig = "";
+      r.runtime.schema20RescanDone = false;
+      r.runtime.storyCardSig = "";
+      r.runtime.storyCardQuickSig = "";
+      r.runtime.storyCardScanTurn = -1;
+      r.runtime.characterNotesPersistence = "unknown";
+      // Re-score retained insights so legacy gestures / incidental logistics are never
+      // mirrored merely because an older schema accepted them. Historical archive remains.
+      for (let ii=0; ii<(r.insights||[]).length; ii++) {
+        const ix=r.insights[ii]; if(!ix)continue;
+        if (insightNoise(ix.text, ix.category, ix.speaker, Number(ix.score)||0)) ix.mirrorSuppressed=true;
+      }
+    }
+    if (previousSchema > 0 && previousSchema < 21) {
+      // Schema 21 quarantines retired Story Card mirrors. Schema 16/18 LIVE CONTINUITY
+      // and early IMPORTANT CHARACTER CONTINUITY blocks were display mirrors, not a
+      // trustworthy portable database. Importing them back into a fresh/current story can
+      // resurrect stale seasons or old misclassifications. Portable continuity now comes
+      // only from the bounded Schema 20+ PROFILE DELTA block plus recent played history.
+      const beforeFacts=(r.liveFacts||[]).length, beforeInsights=(r.insights||[]).length;
+      r.liveFacts=(r.liveFacts||[]).filter(f=>!(f&&(safeText(f.src)==="story-card-managed-import"||safeText(f.origin)==="card-import")));
+      r.insights=(r.insights||[]).filter(x=>!(x&&/^story-card-insight-import(?::|$)/.test(safeText(x.src))));
+      r.stats.legacyManagedPurges=Number(r.stats.legacyManagedPurges||0)+(beforeFacts-r.liveFacts.length)+(beforeInsights-r.insights.length);
+      r.runtime.managedCardImportDone=false;
+      r.runtime.managedInsightImportDone=false;
+      r.runtime.profileDeltaImportDone=false;
+      r.runtime.legacyManagedQuarantineDone=false;
+      r.runtime.needsSchema16CardCleanup=true;
+      r.runtime.managedCardCleanupIndex=0;
+      r.runtime.needsSchema20CardCleanup=true;
+      r.runtime.schema20CleanupIndex=0;
+      // Rebuild current facts from bounded recent played history after purging stale mirrors.
+      r.runtime.schema20RescanDone=false;
+      r.runtime.insightSyncSig=""; r.runtime.liveSyncSig=""; r.runtime.profileDeltaSig="";
+      r.runtime.recallCacheKey=""; r.runtime.recallCacheBlock="";
     }
     const needsColdPacking = r.cold.some(x => x && !Array.isArray(x));
     if (needsSchemaMigration || needsColdPacking || Object.prototype.hasOwnProperty.call(r, "v")) {
@@ -18993,104 +19051,31 @@ const EIDETIC = (() => {
   function configCardNotes() {
     return [
       "🧠 EIDETIC — CONFIG GUIDE",
+      "EIDETIC works automatically. Entry contains settings only; this Notes field is the human guide.",
+      "It stores memory in state.__EIDETIC, never Plot Essentials/Author's Note/state.memory. It creates no Current Played Continuity dashboard card.",
+      "Major character continuity is kept internally, mirrored to Notes when the client preserves Notes, and compactly mirrored into the correct Character Entry so the AI can actually use durable updates.",
       "",
-      "EIDETIC works automatically. You do not need commands, a setup card, or a character list.",
-      "EIDETIC creates only this Config Story Card. It does NOT create a separate Current Played Continuity card; moving continuity stays in EIDETIC's private state and is injected only into the model Context when relevant, so your Story Card list stays clean.",
-      "Important character revelations may be mirrored into that character card's Notes when the client permits it. The structured Character Insight Ledger remains authoritative even if Notes metadata is unavailable.",
-      "The Entry contains only editable settings. This Notes section explains every option. Change only the value after = and keep the setting names unchanged.",
+      "enabled — on/off master switch.",
+      "memoryDepth — compact / standard / deep. Controls archive size; deep is best for long Adventures.",
+      "recallSize — small / balanced / large. Controls how much retrieved memory enters model context.",
+      "strictKnowledge — on keeps private knowledge scoped to witnesses/knowers; recommended.",
+      "autoDetect — on enables character/world entity auto-detection and anti-junk filtering.",
+      "detectionMode — strict for maximum precision; balanced is recommended for most stories.",
+      "currentState — on. Tracks what is true now: changing status/location/role/relationship/identity/possessions without deleting history.",
+      "worldMemory — Tracks scenario-wide continuity: durable locations, items, organisations, destruction, discoveries and major world changes.",
+      "storyTime — on tracks explicit dates and elapsed-time jumps.",
+      "narrativeRecall — on allows relevant player/narrator-known history to return when safe.",
+      "abstainOnMiss — on tells the model not to invent an answer when an explicit recall has no evidence.",
+      "activeCharacters — 1–6; max NPC private-memory sections considered at once. Default 3.",
+      "outputSpacing — preserve leaves model output untouched; auto may repair a missing continuation space.",
+      "debug — on adds troubleshooting diagnostics; leave off normally.",
       "",
-      "⚙️ MAIN OPTIONS",
+      "AUTOMATIC: episodic + anchor memory; claims vs facts; character knowledge; current state; Story Card identity/alias awareness; durable character profile updates; Retry/Undo cleanup; world memory; time tracking; relevance ranking; Detection Fortress.",
+      "Important-character updates are selective: identity/status/relationship/ability changes, confessions, important commitments, durable goals/boundaries and strong evidence. Gestures, ordinary chatter and incidental logistics are rejected.",
+      "Scenario baselines are NOT guessed from arbitrary Story Cards. To opt a non-character card into global EIDETIC baseline recall, add trigger %__EIDETIC_CURRENT_SEED_20__% or the phrase EIDETIC CURRENT SEED.",
       "",
-      "enabled",
-      "Master switch. on = EIDETIC runs normally. off = memory tracking/retrieval is paused.",
-      "",
-      "memoryDepth",
-      "How much long-term memory EIDETIC keeps.",
-      "compact = 1,200 hot memories + 2,400 cold memories + 500 anchors.",
-      "standard = 2,800 hot + 5,600 cold + 800 anchors.",
-      "deep = 4,500 hot + 9,000 cold + 1,200 anchors. Recommended for long Adventures.",
-      "",
-      "recallSize",
-      "How much retrieved memory may enter active AI context.",
-      "small = lowest context use.",
-      "balanced = recommended default.",
-      "large = more recalled detail, but uses more context.",
-      "",
-      "strictKnowledge",
-      "Keeps private knowledge with the characters who actually knew or witnessed it. Recommended: on.",
-      "",
-      "autoDetect",
-      "Runs Detection Fortress for characters and world entities. The expanded fortress includes thousands of active rejection, ambiguity, role and world-type rules. Recommended: on.",
-      "",
-      "detectionMode",
-      "strict = maximum precision. Use only if your Scenario produces lots of false character detections.",
-      "balanced = recommended default. Strong human evidence promotes immediately; weaker names can accumulate evidence across turns while the junk fortress still blocks obvious non-people.",
-      "",
-      "currentState",
-      "Tracks what is true now about characters: location, role, status, relationships, abilities, possessions, identity and other changing facts, while preserving older history.",
-      "",
-      "worldMemory",
-      "Tracks scenario-wide continuity such as locations, items, vehicles, organizations, destruction/repair, ownership, deaths, discoveries and major world-state changes.",
-      "",
-      "storyTime",
-      "Tracks explicit dates and time gaps such as 'three days later' or 'one year later' so old events can be recalled relative to the current story time.",
-      "",
-      "narrativeRecall",
-      "Allows relevant narrator/player-known history to return when appropriate instead of limiting recall only to private NPC memories.",
-      "",
-      "abstainOnMiss",
-      "If an explicit memory question has no matching evidence, EIDETIC tells the AI not to invent a past memory. Recommended: on.",
-      "",
-      "activeCharacters",
-      "Maximum number of NPC memory sections considered at once. Valid range: 1–6. Recommended: 3.",
-      "",
-      "outputSpacing",
-      "preserve = recommended/default; leaves ordinary model output byte-for-byte unchanged.",
-      "auto = optional cosmetic repair for a missing continuation space; some clients may mark edited output.",
-      "",
-      "debug",
-      "Extra diagnostics for troubleshooting. Leave off during normal play.",
-      "",
-      "✨ WHAT EIDETIC HANDLES AUTOMATICALLY",
-      "• Hot + cold episodic memory and durable anchors",
-      "• Character-scoped knowledge and witness tracking",
-      "• Major character reveals, promises, confessions, goals, boundaries and important statements mirrored to Character Notes and retained in a structured insight ledger",
-      "• Facts, claims, suspicions, uncertainty and unresolved questions",
-      "• Current-state tracking without deleting historical states",
-      "• Scenario-wide locations, items, vehicles, organizations and major events",
-      "• Deaths, destruction, ownership changes, movement and repairs",
-      "• Explicit dates, time gaps and relative-age recall",
-      "• Smart relevance ranking instead of dumping the archive into context",
-      "• Detection Fortress anti-junk entity detection",
-      "• Aliases, titles and codenames",
-      "• Scene presence and private-thought ownership",
-      "• Retry, Undo and abandoned-branch cleanup",
-      "• Repetition compression",
-      "• Character and world Story Card awareness",
-      "• Adaptive context budgeting, revision safety and leak scrubbing",
-      "",
-      "💡 NORMAL USE",
-      "Just play. EIDETIC observes, stores and retrieves continuity automatically.",
-      "Commands are optional tools, not required setup.",
-      "Phoenix/mobile note: slash commands use one tiny safe utility generation because stopping an Input hook causes AI Dungeon to show a script error.",
-      "Added-script safety: EIDETIC never writes Plot Essentials, Author's Note or state.memory; recall is injected only during the Context hook.",
-      "A red context-warning triangle means some Plot Components did not fit their allocated context; EIDETIC keeps its own recall compact and cannot suppress platform allocation warnings caused by other large/triggered components.",
-      "",
-      "🛠️ OPTIONAL COMMANDS",
-      "/eidetic or /memory — quick status",
-      "/config — show active settings and Config-card status",
-      "/memstats — archive statistics",
-      "/memdetect — detection status",
-      "/roster — tracked NPCs",
-      "/focus Alice — prioritize Alice",
-      "/focus auto — return to automatic focus",
-      "/remember Alice | fact — pin a creator-confirmed memory",
-      "/recall Alice | topic — inspect matching memory",
-      "/live — show internal played-continuity capture + Character Notes mirrors",
-      "/memdebug on/off — diagnostics",
-      "/memclear CONFIRM — erase EIDETIC memory",
-      "",
-      "⚠️ Invalid setting values safely fall back to EIDETIC defaults."
+      "COMMANDS: /eidetic /memory /config /memstats /memdetect /roster /focus Alice /focus auto /remember Alice | fact /recall Alice | topic /live /memdebug on|off /memclear CONFIRM",
+      "Mobile/add-on safety: commands use the soft path; Config-card failure does not disable memory. Invalid values fall back safely."
     ].join("\n");
   }
 
@@ -19292,6 +19277,8 @@ const EIDETIC = (() => {
   const EIDETIC_CURRENT_CLOSE = "[[/EIDETIC CURRENT PLAYED CONTINUITY]]";
   const EIDETIC_INSIGHT_NOTES_OPEN = "[[EIDETIC IMPORTANT CHARACTER CONTINUITY]]";
   const EIDETIC_INSIGHT_NOTES_CLOSE = "[[/EIDETIC IMPORTANT CHARACTER CONTINUITY]]";
+  const EIDETIC_PROFILE_OPEN = "[[EIDETIC PROFILE DELTA]]";
+  const EIDETIC_PROFILE_CLOSE = "[[/EIDETIC PROFILE DELTA]]";
 
   function stripEideticNotes(text) {
     text=safeText(text); const a=text.indexOf(EIDETIC_NOTES_OPEN), b=text.indexOf(EIDETIC_NOTES_CLOSE);
@@ -19340,6 +19327,7 @@ const EIDETIC = (() => {
     let text=safeText(card && (card.entry!=null?card.entry:card.value));
     text=stripManagedEntryBlock(text,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
     text=stripManagedEntryBlock(text,EIDETIC_CURRENT_OPEN,EIDETIC_CURRENT_CLOSE);
+    text=stripManagedEntryBlock(text,EIDETIC_PROFILE_OPEN,EIDETIC_PROFILE_CLOSE);
     return cleanText(text);
   }
   function evidenceState(text, mode) {
@@ -19368,7 +19356,7 @@ const EIDETIC = (() => {
   function liveFactEligible(text, mode, imp) {
     const t=cleanText(text); if(!t||mode==="question"||liveLooksQuestion(t)||t.length<12)return false;
     if(/^(?:okay|right|yes|no|yeah|yeh|thanks|thank you|hello|hi|bye|goodnight|night)\b[.!?]*$/i.test(t))return false;
-    if(mode==="event"||mode==="player-event") return imp>=3 || liveStrategicText(t) || /\b(?:arriv(?:e|es|ed)|leav(?:e|es|ing)|return(?:s|ed)?|discover(?:s|ed)?|find(?:s|ing)?|found|attack(?:s|ed)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|seize(?:s|d)?|escape(?:s|d)?|custody|injur(?:e|es|ed)|wound(?:s|ed)?|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|die(?:s|d)?|dead|alive|missing|move(?:s|d)?|stay(?:s|ed)?|learn(?:s|ed)?|tell(?:s|ing)?|told|reveal(?:s|ed)?|confirm(?:s|ed)?|admit(?:s|ted)?|measure(?:s|d)?|match(?:es|ed)?|orbit(?:s|ing)?|pod|vision|anomaly|relationship|partner|married|dating|pregnant|birthday|years? old|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|depart(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translate(?:s|d)?|translation|reply|response|crew|mission|objective|route|anchor key|dead hour|revision mark|offline|ownership)\b/i.test(t);
+    if(mode==="event"||mode==="player-event") return imp>=3 || liveStrategicText(t) || /\b(?:arriv(?:e|es|ed)|leav(?:e|es|ing)|return(?:s|ed)?|discover(?:s|ed)?|find(?:s|ing)?|found|attack(?:s|ed)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|take(?:s|n)? hostage|released?|freed|rescued?|vapori[sz](?:e|es|ed)|disintegrat(?:e|es|ed)|drain(?:s|ed|ing)?|siphon(?:s|ed|ing)?|harvest(?:s|ed|ing)?|seize(?:s|d)?|escape(?:s|d)?|custody|injur(?:e|es|ed)|wound(?:s|ed)?|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|die(?:s|d)?|dead|alive|missing|move(?:s|d)?|stay(?:s|ed)?|learn(?:s|ed)?|tell(?:s|ing)?|told|reveal(?:s|ed)?|confirm(?:s|ed)?|admit(?:s|ted)?|measure(?:s|d)?|match(?:es|ed)?|orbit(?:s|ing)?|pod|vision|anomaly|relationship|partner|married|dating|pregnant|birthday|years? old|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|depart(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translate(?:s|d)?|translation|reply|response|crew|mission|objective|route|anchor key|dead hour|revision mark|offline|ownership)\b/i.test(t);
     if(mode==="claim"||mode==="belief"||mode==="uncertain") return imp>=3 || liveStrategicText(t);
     return false;
   }
@@ -19391,7 +19379,7 @@ const EIDETIC = (() => {
     const stateLike=/\b(?:lives?|resides?|stays?)\s+(?:in|at|on|near|with)\b|\b(?:moved|moves|relocated)\s+(?:(?:from\s+[^.!?]{1,70}?\s+)?(?:to|into|back to))\b|\bworks?\s+as\b|\b(?:is|was|became|becomes|remains|has become)\s+(?:now\s+|currently\s+|still\s+)?(?:dead|alive|resurrected|revived|injured|wounded|pregnant|missing|unconscious|awake|ill|sick|healthy|retired|imprisoned|incarcerated|hospitalized|hospitalised)\b|\b(?:is|became|becomes|remains)\s+(?:now\s+|currently\s+)?(?:married to|dating|engaged to|friends with|estranged from|divorced from|separated from|in a relationship with)\b|\b(?:real name is|is known as|codename is|code name is|alias is|goes by)\b|\b(?:joined|joins|is a member of|belongs to|works for)\b/i;
     if(stateLike.test(t))score+=5;
 
-    const durable=/\b(?:arriv(?:e|es|ed)|depart(?:s|ed|ing)?|return(?:s|ed)?|relocat(?:e|es|ed)|discover(?:s|ed)?|learn(?:s|ed)?|reveal(?:s|ed)?|confirm(?:s|ed)?|admit(?:s|ted)?|prove(?:s|d)?|identify(?:ies|ied)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|seize(?:s|d)?|escape(?:s|d)?|injur(?:e|es|ed)|wound(?:s|ed)?|hospitali[sz](?:e|es|ed)|die(?:s|d)?|dead|alive|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|offline|online|stolen|steal(?:s|ing)?|owns?|ownership|possess(?:es|ed)?|gives?|gave|takes?|took|loses?|lost|married|divorc(?:e|es|ed)|engag(?:e|es|ed)|dating|partner|pregnan(?:t|cy)|born|job|works? as|promot(?:e|es|ed)|retir(?:e|es|ed)|joins?|joined|leaves? (?:the )?(?:team|agency|group|faction)|real name|codename|alias|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|course for|en route|heading (?:for|to|toward|towards)|mission|objective|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translation|route|anchor key|dead hour|revision mark|evidence|warrant|contract|database|injury|relationship)\b/i;
+    const durable=/\b(?:arriv(?:e|es|ed)|depart(?:s|ed|ing)?|return(?:s|ed)?|relocat(?:e|es|ed)|discover(?:s|ed)?|learn(?:s|ed)?|reveal(?:s|ed)?|confirm(?:s|ed)?|admit(?:s|ted)?|prove(?:s|d)?|identify(?:ies|ied)?|capture(?:s|d)?|arrest(?:s|ed)?|kidnap(?:s|ped)?|abduct(?:s|ed)?|take(?:s|n)? hostage|released?|freed|rescued?|vapori[sz](?:e|es|ed)|disintegrat(?:e|es|ed)|drain(?:s|ed|ing)?|siphon(?:s|ed|ing)?|harvest(?:s|ed|ing)?|seize(?:s|d)?|escape(?:s|d)?|injur(?:e|es|ed)|wound(?:s|ed)?|hospitali[sz](?:e|es|ed)|die(?:s|d)?|dead|alive|destroy(?:s|ed)?|damage(?:s|d)?|repair(?:s|ed)?|offline|online|stolen|steal(?:s|ing)?|owns?|ownership|possess(?:es|ed)?|gives?|gave|takes?|took|loses?|lost|married|divorc(?:e|es|ed)|engag(?:e|es|ed)|dating|partner|pregnan(?:t|cy)|born|job|works? as|promot(?:e|es|ed)|retir(?:e|es|ed)|joins?|joined|leaves? (?:the )?(?:team|agency|group|faction)|real name|codename|alias|set(?:s|ting)? course|plot(?:s|ted|ting)? (?:a )?course|course for|en route|heading (?:for|to|toward|towards)|mission|objective|checkpoint|waypoint|dock(?:s|ed|ing)?|launch(?:es|ed|ing)?|board(?:s|ed|ing)?|transmit(?:s|ted|ting)?|transmission|signal|translation|route|anchor key|dead hour|revision mark|evidence|warrant|contract|database|injury|relationship)\b/i;
     if(durable.test(t))score+=4;
 
     const major=/\b(?:explosion|collapse|fire|attack|assault|fight|battle|ambush|rescue|hostage|evacuat(?:e|es|ed|ion)|containment|blackout|temporal|anomaly|orbit|pod|vehicle|ship|base|lab|hospital|police|time force|revision)\b/i;
@@ -19419,7 +19407,9 @@ const EIDETIC = (() => {
     if(/\b(?:destroy(?:s|ed)?|collapse(?:s|d)?)\b[^.!?]{0,60}\b(?:station|base|node|garrison|checkpoint|waystation|facility)\b|\b(?:station|base|node|garrison|checkpoint|waystation|facility)\b[^.!?]{0,60}\b(?:destroyed|collapsed|gone|offline)\b/i.test(t))return"site-destruction";
     if(/\b(?:worldship|planet[- ]sized (?:ship|vessel|construct)|invasion)\b/i.test(t)&&/\b(?:earth|destination|hostile|toward|towards|headed|approach|threat)\b/i.test(t))return"strategic-threat";
     if(/\b(?:hidden|secret)\b[^.!?]{0,50}\b(?:ship|vessel|platform)\b|\b(?:ship|vessel|platform)\b[^.!?]{0,70}\bmonitor(?:s|ed|ing)?\b/i.test(t))return"strategic-reveal";
-    if(/\b(?:dead|died|killed|alive|missing|unconscious|awake|imprisoned|captured|in custody|released|escaped)\b/i.test(t))return"status";
+    if(/\b(?:dead|died|killed|vapori[sz](?:e|es|ed)|disintegrat(?:e|es|ed)|alive|missing|unconscious|passed out|awake|imprisoned|abduct(?:s|ed)?|kidnap(?:s|ped)?|takes? hostage|taken hostage|captur(?:e|es|ed)|in custody|releas(?:e|es|ed)|freed?|rescu(?:e|es|ed)|escap(?:e|es|ed))\b/i.test(t))return"status";
+    if(/\b(?:drain(?:s|ed|ing)?|siphon(?:s|ed|ing)?|harvest(?:s|ed|ing)?)\b[^.!?]{0,90}\b(?:energy|power|solar|magic|temporal|spatial)\b|\b(?:energy|power|solar|magic|temporal|spatial)\b[^.!?]{0,90}\b(?:drain(?:s|ed|ing)?|siphon(?:s|ed|ing)?|harvest(?:s|ed|ing)?)\b/i.test(t))return"energy-drain";
+    if(/\b(?:true form|real identity|revealed (?:as|to be)|one of the (?:four|five|six|seven|eight|nine|ten))\b/i.test(t))return"identity";
     if(/\b(?:married|divorced|engaged|dating|partner|relationship|estranged|separated)\b/i.test(t))return"relationship";
     if(/\b(?:arrived|departed|returned|relocated|moved to|moved into|left for)\b/i.test(t))return"movement";
     if(/\b(?:discover(?:s|ed)?|reveal(?:s|ed)?|confirm(?:s|ed)?|admit(?:s|ted)?|found|identified?)\b/i.test(t))return"discovery";
@@ -19479,21 +19469,39 @@ const EIDETIC = (() => {
   function insightCategory(text, speech) {
     const t=cleanText(text);
     if(/\b(?:confess(?:es|ed|ion)?|admits?|admitted|i\s+(?:killed|murdered|betrayed|lied|stole|caused|did it)|truth is)\b/i.test(t))return"CONFESSION";
-    if(/\b(?:promise(?:s|d)?|swear(?:s)?|swore|vow(?:s|ed)?|i['’]?ll\b|i will\b|i won['’]?t\b)\b/i.test(t))return"PROMISE";
     if(/\b(?:threat(?:en|ens|ened)?|i['’]?ll\s+(?:kill|hurt|destroy|expose|ruin)|i will\s+(?:kill|hurt|destroy|expose|ruin))\b/i.test(t))return"THREAT";
-    if(/\b(?:real name|known as|codename|code name|alias|actually\s+(?:am|is|was)|identity)\b/i.test(t))return"IDENTITY";
+    // "I'll need..." is a requirement/goal, not a promise. Reserve PROMISE for an
+    // explicit oath or an actual commitment rather than every English contraction.
+    if(/\b(?:promise(?:s|d)?|swear(?:s)?|swore|vow(?:s|ed)?)\b/i.test(t))return"PROMISE";
+    if(/\b(?:i['’]?ll|i will)\s+(?!need\b|have to\b|try\b|see\b|check\b|look\b)(?:protect|return|come back|testify|help|save|bring|tell|stay|keep|stop|find|finish|deliver|do)\b/i.test(t))return"PROMISE";
+    if(/\b(?:real name|known as|codename|code name|alias|true form|actually\s+(?:am|is|was)|identity|one of the (?:four|five|six|seven|eight|nine|ten))\b/i.test(t))return"IDENTITY";
     if(/\b(?:mother|father|mum|mom|dad|sister|brother|daughter|son|wife|husband|spouse|partner|married|dating|engaged|divorced|separated|love\b|trust\b|hate\b)\b/i.test(t))return"RELATIONSHIP";
-    if(/\b(?:works? for|worked for|joined|member of|belongs to|loyal to|defect(?:s|ed)?|betray(?:s|ed)?|faction|agency|organization|organisation|team)\b/i.test(t))return"ALLEGIANCE";
-    if(/\b(?:power|ability|weakness|allergy|can\s+[a-z]+|cannot\s+[a-z]+|can['’]?t\s+[a-z]+|immune|vulnerable|limit(?:s|ation)?)\b/i.test(t))return"ABILITY";
-    if(/\b(?:dead|alive|injured|wounded|pregnant|missing|unconscious|awake|diagnos(?:ed|is)|hospitali[sz]ed|ill|sick|healthy|recovered|recovers|cleared for (?:field )?duty|retired|imprisoned)\b/i.test(t))return"STATUS";
+    if(/\b(?:works? for|worked for|joined|member of|belongs to|loyal to|defect(?:s|ed)?|betray(?:s|ed)?|faction|agency|organization|organisation)\b/i.test(t))return"ALLEGIANCE";
+    if(/\b(?:power|ability|weakness|allergy|immune|vulnerable|limit(?:s|ation)?|teleport(?:s|ed|ing|ation)?|flight|healing|regeneration|electrokinesis|telekinesis|sorcery|magic)\b/i.test(t))return"ABILITY";
+    if(/\b(?:dead|died|killed|vapori[sz]ed|disintegrated|destroyed|alive|injured|wounded|pregnant|missing|abducted|kidnapped|captured|released|freed|rescued|unconscious|awake|passed out|diagnos(?:ed|is)|hospitali[sz]ed|ill|sick|healthy|recovered|cleared for (?:field )?duty|retired|imprisoned)\b/i.test(t))return"STATUS";
     if(/\b(?:secret|classified|hid(?:den)?|kept from|nobody knows|don['’]?t tell|never told|cover[- ]?up)\b/i.test(t))return"SECRET";
-    if(/\b(?:plan(?:s|ned)?|intend(?:s|ed)?|goal|objective|want(?:s|ed)? to|need(?:s|ed)? to|going to|means? to)\b/i.test(t))return"GOAL";
+    if(/\b(?:plan(?:s|ned)?|intend(?:s|ed)?|goal|objective|want(?:s|ed)? to|need(?:s|ed)? to|going to|means? to|i['’]?ll need|i will need)\b/i.test(t))return"GOAL";
     if(/\b(?:refuse(?:s|d)?|won['’]?t|will not|never again|boundary|do not|don['’]?t)\b/i.test(t))return"BOUNDARY";
     if(/\b(?:remember(?:s|ed)?|saw|witnessed|knows?|knew|found out|learned that|was there|used to|back when|years ago|before i)\b/i.test(t))return"HISTORY";
     if(/\b(?:believe(?:s|d)?|think(?:s|ing)?|suspect(?:s|ed)?|fear(?:s|ed)?|theory|guess)\b/i.test(t))return"BELIEF";
     if(/\b(?:anchor key|dead hour|target|coordinates?|checkpoint|waypoint|rendezvous|deadline|attack starts|attack begins|operation starts|operation begins|hidden in|stored in|located in|located at)\b/i.test(t))return"INTEL";
     if(/\b(?:warn(?:s|ed)?|evidence|proof|saw|heard|tracked|recorded|found|discovered)\b/i.test(t))return"KNOWLEDGE";
     return speech?"STATEMENT":"REVEAL";
+  }
+
+  function insightNoise(text, category, speaker, score) {
+    const t=cleanText(text), cat=safeText(category); if(!t)return true;
+    if(t.length<10)return true;
+    // Pure blocking/micro-behaviour is not durable character continuity.
+    if(/^(?:[^.!?]{0,35}\b)?(?:looks?|glances?|gaze|nods?|smiles?|grins?|shrugs?|steps?|walks?|moves?|turns?|sits?|stands?|breathes?|watches?)\b/i.test(t) &&
+       !/\b(?:dead|alive|missing|abducted|kidnapped|captured|released|injured|wounded|identity|real name|true form|works? for|joined|betrayed|promise|swear|vow|secret|power|ability|weakness|married|engaged|pregnant|evidence|coordinates?|target)\b/i.test(t))return true;
+    if(/\b(?:gaze stays|eyes stay|looks at you|looks up|looks over|steps closer|takes a sip|sets (?:his|her|their) glass down)\b/i.test(t) && Number(score||0)<10)return true;
+    if(cat==="STATEMENT" && Number(score||0)<8)return true;
+    if(cat==="REVEAL" && Number(score||0)<8)return true;
+    if(/\b(?:nice weather|good morning|coffee|tea|how's the|how is the)\b/i.test(t)&&Number(score||0)<10)return true;
+    if(/\b(?:need(?:s|ed)? (?:a )?cover|need(?:s|ed)? clearance|need(?:s|ed)? a ride|need(?:s|ed)? transport|need(?:s|ed)? to get (?:there|back|home))\b/i.test(t))return true;
+    if(/\b(?:out of powered work|no powered work)\b/i.test(t))return true;
+    return false;
   }
 
   function importantSpeechScore(text, verb) {
@@ -19521,9 +19529,11 @@ const EIDETIC = (() => {
     const a=aliasRegexSourceForCharacter(charKey); if(!a)return false;
     const t=cleanText(text);
     const direct=[
-      "(?:^|[^A-Za-z0-9])"+a+"(?:['’]s)?\\s+[^.!?]{0,26}\\b(?:is|was|has|had|became|becomes|remains|turned out to be|works? for|worked for|joined|left|betrayed|killed|murdered|hid|stole|owns?|possesses?)\\b",
-      "(?:^|[^A-Za-z0-9])"+a+"['’]s\\s+(?:real name|identity|secret|mother|father|mum|mom|dad|sister|brother|daughter|son|wife|husband|spouse|partner|power|ability|weakness|allergy|diagnosis|injury|job|role|allegiance)\\b",
-      "\\b(?:confirms?|confirmed|reveals?|revealed|proves?|proved|shows?|showed|discovers?|discovered|learns?|learned)\\b[^.!?]{0,90}(?:^|[^A-Za-z0-9])"+a+"\\s+(?:is|was|has|had|works?|worked|joined|left|killed|betrayed|owns?|possesses?)\\b"
+      "(?:^|[^A-Za-z0-9])"+a+"(?:['’]s)?\\s+[^.!?]{0,34}\\b(?:is|was|has|had|became|becomes|remains|turned out to be|works? for|worked for|joined|left|betrayed|killed|murdered|vapori[sz]ed|disintegrated|abducted|kidnapped|captured|released|freed|rescued|hid|stole|owns?|possesses?)\\b",
+      "(?:^|[^A-Za-z0-9])"+a+"['’]s\\s+(?:real name|identity|true form|secret|mother|father|mum|mom|dad|sister|brother|daughter|son|wife|husband|spouse|partner|power|ability|weakness|allergy|diagnosis|injury|job|role|allegiance)\\b",
+      "\\b(?:confirms?|confirmed|reveals?|revealed|proves?|proved|shows?|showed|discovers?|discovered|learns?|learned)\\b[^.!?]{0,90}(?:^|[^A-Za-z0-9])"+a+"\\s+(?:is|was|has|had|works?|worked|joined|left|killed|vapori[sz]ed|disintegrated|abducted|kidnapped|captured|released|betrayed|owns?|possesses?)\\b",
+      "(?:^|[^A-Za-z0-9])"+a+"['’]s\\s+true form\\b",
+      "\\b(?:vorunn|alien|infiltrator|observer)\\b[^.!?]{0,70}(?:^|[^A-Za-z0-9])"+a+"\\b|(?:^|[^A-Za-z0-9])"+a+"\\b[^.!?]{0,70}\\b(?:vorunn|alien|infiltrator|observer)\\b"
     ];
     for(let i=0;i<direct.length;i++)if(new RegExp(direct[i],"i").test(t))return true;
     return false;
@@ -19534,7 +19544,7 @@ const EIDETIC = (() => {
     let score=Math.max(1,Number(imp)||1);
     const slots=stateSlotsForCharacter(t,charKey);
     if(slots.length)score+=4;
-    if(/\b(?:reveal(?:s|ed)?|discover(?:s|ed)?|learn(?:s|ed)? that|confirm(?:s|ed)?|prove(?:s|d)?|real name|identity|secret|confess(?:es|ed)?|betray(?:s|ed)?|actually\s+(?:is|was)|turns out|was responsible|killed|murdered|parent|mother|father|sister|brother|wife|husband|spouse|partner|pregnant|diagnos(?:ed|is)|power|ability|weakness|allergy|works? for|joined|left the|defect(?:s|ed)?)\b/i.test(t))score+=4;
+    if(/\b(?:reveal(?:s|ed)?|discover(?:s|ed)?|learn(?:s|ed)? that|confirm(?:s|ed)?|prove(?:s|d)?|real name|identity|secret|confess(?:es|ed)?|betray(?:s|ed)?|actually\s+(?:is|was)|turns out|was responsible|killed|murdered|vapori[sz]ed|disintegrated|abducted|kidnapped|captured|released|true form|one of the (?:four|five|six|seven|eight|nine|ten)|parent|mother|father|sister|brother|wife|husband|spouse|partner|pregnant|diagnos(?:ed|is)|power|ability|weakness|allergy|works? for|joined|left the|defect(?:s|ed)?)\b/i.test(t))score+=4;
     if(mode==="claim"||mode==="belief"||mode==="uncertain")score-=1;
     if(/\b(?:looks?|glances?|nods?|smiles?|shrugs?|steps?|walks?|sits?|stands?|breathes?|gaze|hand|eyes?)\b/i.test(t)&&!slots.length)score-=3;
     return score;
@@ -19591,6 +19601,7 @@ const EIDETIC = (() => {
           quote=cleanText(quote); const score=importantSpeechScore(quote,v); if(score<5)continue;
           const owners=ownerSetFor(m[0],kind); owners.add(key);
           const cat=insightCategory(quote,true);
+          if(insightNoise(quote,cat,true,score))continue;
           if(addCharacterInsight(key,quote,cat,"CLAIM",owners,turn,kind,srcHash+":speech:"+ki+":"+pi,score,key))added++;
         }
       }
@@ -19599,7 +19610,8 @@ const EIDETIC = (() => {
       let rm; while((rm=reported.exec(safeText(text)))!==null){
         const statement=cleanText(rm[3]), score=importantSpeechScore(statement,rm[2]); if(score<6)continue;
         const owners=ownerSetFor(rm[0],kind); owners.add(key);
-        if(addCharacterInsight(key,statement,insightCategory(statement,true),"CLAIM",owners,turn,kind,srcHash+":reported:"+ki,score,key))added++;
+        const category=insightCategory(statement,true); if(insightNoise(statement,category,true,score))continue;
+        if(addCharacterInsight(key,statement,category,"CLAIM",owners,turn,kind,srcHash+":reported:"+ki,score,key))added++;
       }
     }
     return added;
@@ -19617,6 +19629,7 @@ const EIDETIC = (() => {
       const score=characterRevealScore(text,key,mode,imp); if(score<5)continue;
       const status=evidenceState(text,mode);
       const category=insightCategory(text,false);
+      if(insightNoise(text,category,false,score))continue;
       if(addCharacterInsight(key,text,category,status,owners,turn,kind,src+":reveal:"+i,score,""))added++;
     }
     return added;
@@ -19634,7 +19647,12 @@ const EIDETIC = (() => {
   function characterInsightsForNotes(charKey,limit) {
     const r=root(); if(!r)return[]; const out=[], seen=new Set(), max=limit||EIDETIC_CONFIG.CHARACTER_NOTE_INSIGHTS;
     for(let i=r.insights.length-1;i>=0&&out.length<max;i--){
-      const x=r.insights[i]; if(!x||x.subject!==charKey||x.superseded||Number(x.score||0)<5)continue;
+      const x=r.insights[i]; if(!x||x.subject!==charKey||x.superseded||x.mirrorSuppressed)continue;
+      if(Number(x.score||0)<6&&!/^(?:STATUS|IDENTITY|RELATIONSHIP|ABILITY|CONFESSION|SECRET|PROMISE|THREAT|ALLEGIANCE)$/.test(safeText(x.category)))continue;
+      if(insightNoise(x.text,x.category,x.speaker,Number(x.score)||0))continue;
+      if(x.speaker&&/\b(?:out of powered work|no powered work|cleared for powered work|medical restriction)\b/i.test(x.text)){
+        const mentioned=namesMentioned(x.text); if(mentioned.some(k=>k!==charKey))continue;
+      }
       const stateKey=insightStatefulCategory(x.category)?x.category:"";
       if(stateKey&&seen.has(stateKey))continue;
       if(stateKey)seen.add(stateKey);
@@ -19691,6 +19709,81 @@ const EIDETIC = (() => {
     if(!tryWriteCharacterInsightNotes(c,next))return false;
     const r=root(); r.stats.characterInsightNotes=Number(r.stats.characterInsightNotes||0)+1; r.stats.cardNoteWrites=Number(r.stats.cardNoteWrites||0)+1;
     return true;
+  }
+
+  function profileDeltaLine(x) {
+    const label=x.speaker?"SAID/"+safeText(x.status):safeText(x.status);
+    return "• T"+x.turn+" ["+label+" • "+safeText(x.category)+"] "+displayText(x.text,220);
+  }
+
+  function characterProfileFactAbout(f, charKey) {
+    if(!f||!charKey)return false;
+    const names=f.names||[]; if(names.indexOf(charKey)<0)return false;
+    if(names.length===1)return true;
+    const a=aliasRegexSourceForCharacter(charKey), t=cleanText(f.text); if(!a)return false;
+    const subject=new RegExp("(?:^|[^A-Za-z0-9])"+a+"(?:['’]s)?\\s+[^.!?]{0,38}\\b(?:is|was|has|had|became|becomes|remains|returns?|arrives?|leaves?|dies?|dead|alive|missing|abduct(?:s|ed)?|kidnap(?:s|ped)?|captur(?:e|es|ed)|releas(?:e|es|ed)|freed?|rescu(?:e|es|ed)|vapori[sz](?:e|es|ed)|disintegrat(?:e|es|ed)|drain(?:s|ed|ing)?|reveals?|revealed)\\b","i");
+    const object=new RegExp("\\b(?:abduct(?:s|ed)?|kidnap(?:s|ped)?|captur(?:e|es|ed)|releas(?:e|es|ed)|free(?:s|d)?|rescu(?:e|es|ed)|kill(?:s|ed)?|vapori[sz](?:e|es|ed)|disintegrat(?:e|es|ed)|drain(?:s|ed|ing)?|siphon(?:s|ed|ing)?)\\b[^.!?]{0,35}(?:^|[^A-Za-z0-9])"+a+"\\b","i");
+    return subject.test(t)||object.test(t);
+  }
+
+  function characterProfileItems(charKey, limit) {
+    const insights=characterInsightsForNotes(charKey,Math.max(1,limit||EIDETIC_CONFIG.CHARACTER_PROFILE_INSIGHTS));
+    const out=[], seen=new Set();
+    for(let i=0;i<insights.length;i++){
+      const x=insights[i], fp=hash(cleanText(x.text).toLowerCase()); if(seen.has(fp))continue;
+      seen.add(fp); out.push({kind:"insight",x,priority:Number(x.score||0)+(/^(?:IDENTITY|STATUS|RELATIONSHIP|ABILITY|CONFESSION|SECRET)$/.test(x.category)?16:8)});
+    }
+    // Objective high-priority state can still update a profile even when the sentence was
+    // not phrased as a formal "reveal". This catches abduction/release/injury/death etc.
+    const facts=liveFactsForCharacter(charKey,6);
+    for(let i=0;i<facts.length;i++){
+      const f=facts[i]; if(!f||f.superseded||f.status!=="FACT"||liveFactPriority(f)<14)continue;
+      if(!characterProfileFactAbout(f,charKey))continue;
+      if(!/^(?:status|relationship|movement|discovery|energy-drain|identity|event|site-destruction|strategic-reveal)$/.test(liveFactFacet(f)))continue;
+      const fp=hash(cleanText(f.text).toLowerCase()); if(seen.has(fp))continue;
+      seen.add(fp); out.push({kind:"fact",f,priority:liveFactPriority(f)});
+    }
+    out.sort((a,b)=>b.priority-a.priority||Number((b.x||b.f).turn||0)-Number((a.x||a.f).turn||0));
+    return out.slice(0,Math.max(1,limit||EIDETIC_CONFIG.CHARACTER_PROFILE_INSIGHTS));
+  }
+
+  function writeCharacterProfileDelta(charKey) {
+    if(!EIDETIC_CONFIG.SYNC_CHARACTER_PROFILE_DELTAS||!cardSyncAllowed(false))return false;
+    const idx=findStoryCardForCharacter(charKey); if(idx<0||!storyCards[idx])return false;
+    const items=characterProfileItems(charKey,EIDETIC_CONFIG.CHARACTER_PROFILE_INSIGHTS); if(!items.length)return false;
+    const c=storyCards[idx], original=safeText(c.entry!=null?c.entry:c.value);
+    let base=stripManagedEntryBlock(original,EIDETIC_PROFILE_OPEN,EIDETIC_PROFILE_CLOSE);
+    base=stripManagedEntryBlock(base,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
+    const head=EIDETIC_PROFILE_OPEN+"\nPLAYED CANON ABOUT THIS CHARACTER. This is author continuity, not automatic knowledge for every NPC. SAID/CLAIM is not objective fact.\n";
+    let lines=items.map(it=>it.kind==="insight"?profileDeltaLine(it.x):("• T"+it.f.turn+" [FACT • "+liveFactFacet(it.f).toUpperCase()+"] "+displayText(it.f.text,220)));
+    let block="";
+    while(lines.length){
+      block=head+lines.join("\n")+"\n"+EIDETIC_PROFILE_CLOSE;
+      if(block.length<=EIDETIC_CONFIG.CHARACTER_PROFILE_BLOCK_CHARS && (base.length+2+block.length)<=EIDETIC_CONFIG.MAX_CHARACTER_CARD_ENTRY_CHARS)break;
+      lines.pop();
+    }
+    if(!lines.length)return false;
+    const next=(base?base+"\n\n":"")+block; if(next===original)return false;
+    if(!persistStoryCard(idx,safeText(c.keys),next,safeText(c.type)||"Character"))return false;
+    const r=root(); r.stats.characterProfileWrites=Number(r.stats.characterProfileWrites||0)+1; r.stats.cardEntryWrites=Number(r.stats.cardEntryWrites||0)+1;
+    return true;
+  }
+
+  function backfillCharacterProfileDeltas(limit) {
+    const r=root(); if(!r)return 0;
+    const newest=Object.create(null);
+    for(let i=0;i<(r.insights||[]).length;i++){
+      const x=r.insights[i]; if(!x||x.superseded||!x.subject)continue;
+      newest[x.subject]=Math.max(Number(newest[x.subject]||-1),Number(x.turn||0));
+    }
+    for(let i=0;i<(r.liveFacts||[]).length;i++){
+      const f=r.liveFacts[i]; if(!f||f.superseded||f.status!=="FACT")continue;
+      for(const k of (f.names||[]))newest[k]=Math.max(Number(newest[k]||-1),Number(f.turn||0));
+    }
+    const subjects=Object.keys(newest).sort((a,b)=>newest[b]-newest[a]);
+    let writes=0, max=Math.max(1,Number(limit)||12);
+    for(let i=0;i<subjects.length&&writes<max;i++)if(writeCharacterProfileDelta(subjects[i]))writes++;
+    return writes;
   }
 
   function backfillCharacterInsightNotes(limit) {
@@ -19783,14 +19876,30 @@ const EIDETIC = (() => {
   function findStoryCardForCharacter(charKey) {
     if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return -1;
     const r=root(), ch=r&&r.chars?r.chars[charKey]:null; if(!ch)return -1;
-    const forms=[ch.name].concat(ch.aliases||[]).map(normName).filter(Boolean);
+    const forms=[ch.name].concat(ch.aliases||[]).map(normName).filter(Boolean), candidates=[];
     for(let i=0;i<storyCards.length;i++){
       const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase(); if(!/character|npc|person|people|cast/.test(type))continue;
-      const id=normName(storyCardIdentityName(stableStoryCardEntry(c))), title=normName(c.title), keys=splitKeys(c.keys).map(normName);
-      if(forms.some(f=>f===id||f===title||keys.indexOf(f)>=0))return i;
+      const base=stableStoryCardEntry(c), id=normName(storyCardIdentityName(base)), title=normName(c.title), keys=splitKeys(c.keys).map(normName);
+      if(!forms.some(f=>f===id||f===title||keys.indexOf(f)>=0))continue;
+      const meta=(safeText(c.title)+"\n"+safeText(c.description!=null?c.description:c.notes)+"\n"+base), low=meta.toLowerCase();
+      let score=0;
+      if(forms.indexOf(title)>=0)score+=16;
+      if(forms.indexOf(id)>=0)score+=14;
+      if(forms.some(f=>keys.indexOf(f)>=0))score+=12;
+      if(c.isPinned)score+=18;
+      if(/\b(?:current player profile|current injury|current played|current:|active ethical conflict|current status|homecoming)\b/i.test(meta))score+=7;
+      if(/\b(?:archive detail|historical reference|triggers disabled|archive profile|historical .* character|old episode|older season)\b/i.test(meta))score-=28;
+      if(/\b(?:future v\d+ payoff|future direction|author plan|writer[- ]room)\b/i.test(meta))score-=18;
+      if(base.indexOf(EIDETIC_PROFILE_OPEN)>=0)score+=3;
+      if(/^name\s*:/i.test(base))score+=2;
+      candidates.push({i,score});
     }
-    return -1;
+    if(!candidates.length)return -1;
+    candidates.sort((a,b)=>b.score-a.score||b.i-a.i);
+    if(candidates.length>1&&r&&r.stats)r.stats.characterCardSelectionRepairs=Number(r.stats.characterCardSelectionRepairs||0)+1;
+    return candidates[0].i;
   }
+
   function liveFactsForCharacter(charKey, limit) {
     const r=root(); if(!r)return[];
     const max=limit||EIDETIC_CONFIG.CARD_NOTE_FACTS, direct=[], witnessed=[];
@@ -19868,52 +19977,149 @@ const EIDETIC = (() => {
     return out;
   }
 
-  function importManagedContinuityFromStoryCards() {
-    const r=root();
-    if(!r||!r.runtime||r.runtime.managedCardImportDone)return 0;
-    r.runtime.managedCardImportDone=true;
-    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return 0;
-    const seen=new Set((r.liveFacts||[]).map(f=>safeText(f&&f.fp)).filter(Boolean));
-    let imported=0, foundManaged=false;
-    const push=(raw, owners, forcedNames)=>{
-      const status=/^(?:FACT|CLAIM|BELIEF|INFERENCE|UNCONFIRMED|NEGATED)$/.test(raw.status)?raw.status:"UNCONFIRMED";
-      const names=(forcedNames&&forcedNames.length?forcedNames:namesMentioned(raw.text)).filter(Boolean);
-      const mode=status==="CLAIM"?"claim":status==="BELIEF"?"belief":/^(?:INFERENCE|UNCONFIRMED)$/.test(status)?"uncertain":"event";
-      const fp=hash(status+"|"+cleanText(raw.text).toLowerCase());
-      if(seen.has(fp))return;
-      const f={id:"lf"+(++r.seq),turn:raw.turn,kind:"output",mode,status,text:displayText(raw.text,EIDETIC_CONFIG.LIVE_FACT_CHARS),owners:Array.from(new Set(owners||[PLAYER])),names,world:[],src:"story-card-managed-import",fp,origin:"card-import"};
-      if(!liveFactCardEligible(f))return;
-      r.liveFacts.push(f); seen.add(fp); imported++;
-    };
-
-    // Import private managed character facts first so duplicate dashboard lines retain
-    // the narrower knowledge ownership instead of becoming narrator-global.
-    for(let i=0;i<storyCards.length;i++){
-      const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase(), entry=safeText(c.entry!=null?c.entry:c.value);
-      if(entry.indexOf(EIDETIC_ENTRY_OPEN)<0||!/character|npc|person|people|cast/.test(type))continue;
-      foundManaged=true;
-      const key=characterKeyForStoryCard(c), owners=[PLAYER]; if(key)owners.push(key);
-      const lines=managedFactLines(entry,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
-      for(let j=0;j<lines.length;j++)push(lines[j],owners,key?[key]:[]);
+  function managedInsightLines(text) {
+    text=safeText(text); const a=text.indexOf(EIDETIC_INSIGHT_NOTES_OPEN), b=text.indexOf(EIDETIC_INSIGHT_NOTES_CLOSE);
+    if(a<0||b<a)return[];
+    const inner=text.slice(a+EIDETIC_INSIGHT_NOTES_OPEN.length,b), out=[];
+    const re=/^\s*T(\d+)\s+\[([^\]•]+?)(?:\s*•\s*([^\]]+))?\]\s+(.+?)\s*$/gmi;
+    let m; while((m=re.exec(inner))!==null){
+      const turn=Math.max(0,Number(m[1])||0), lead=safeText(m[2]).trim().toUpperCase(), category=safeText(m[3]||"REVEAL").trim().toUpperCase(), fact=cleanText(m[4]);
+      if(!fact)continue;
+      const speaker=/^SAID\//.test(lead), status=lead.replace(/^SAID\//,"");
+      out.push({turn,status:/^(?:FACT|CLAIM|BELIEF|INFERENCE|UNCONFIRMED|NEGATED)$/.test(status)?status:"CLAIM",category,speaker,text:fact});
     }
-    const ci=findCurrentContinuityCardIndex();
-    if(ci>=0&&storyCards[ci]){
-      const entry=safeText(storyCards[ci].entry!=null?storyCards[ci].entry:storyCards[ci].value);
-      if(entry.indexOf(EIDETIC_CURRENT_OPEN)>=0){
-        foundManaged=true;
-        const lines=managedFactLines(entry,EIDETIC_CURRENT_OPEN,EIDETIC_CURRENT_CLOSE);
-        for(let j=0;j<lines.length;j++)push(lines[j],[PLAYER],[]);
+    return out;
+  }
+
+  function managedProfileDeltaLines(text) {
+    text=safeText(text); const a=text.indexOf(EIDETIC_PROFILE_OPEN), b=text.indexOf(EIDETIC_PROFILE_CLOSE);
+    if(a<0||b<a)return[];
+    const inner=text.slice(a+EIDETIC_PROFILE_OPEN.length,b), out=[];
+    const re=/^\s*[•*-]?\s*T(\d+)\s+\[([^\]]+)\]\s+(.+?)\s*$/gmi;
+    let m; while((m=re.exec(inner))!==null){
+      const turn=Math.max(0,Number(m[1])||0), tag=safeText(m[2]).trim(), fact=cleanText(m[3]); if(!fact)continue;
+      const parts=tag.split(/\s*•\s*/); let lead=safeText(parts[0]).trim().toUpperCase(), category=safeText(parts[1]||"REVEAL").trim().toUpperCase();
+      const speaker=/^SAID\//.test(lead); if(speaker)lead=lead.replace(/^SAID\//,"");
+      const status=/^(?:FACT|CLAIM|BELIEF|INFERENCE|UNCONFIRMED|NEGATED)$/.test(lead)?lead:(speaker?"CLAIM":"UNCONFIRMED");
+      out.push({turn,status,category,speaker,text:fact});
+    }
+    return out;
+  }
+
+  function portableProfileFactSafe(text, charKey) {
+    const t=cleanText(text); if(!t||!charKey)return false;
+    // Bare dialogue fragments were a known legacy false-positive path. A portable objective
+    // FACT must name its subject (or an unambiguous alias) in the sentence.
+    if(/^[\"“”'‘’]/.test(t)||/^(?:i|we|you|he|she|they)\b/i.test(t))return false;
+    const a=aliasRegexSourceForCharacter(charKey); if(!a)return false;
+    try{return new RegExp("(?:^|[^A-Za-z0-9])"+a+"(?:[^A-Za-z0-9]|$)","i").test(t);}catch(_){return false;}
+  }
+
+  function importPortableProfileDeltasFromStoryCards() {
+    const r=root(); if(!r||!r.runtime||r.runtime.profileDeltaImportDone)return 0;
+    r.runtime.profileDeltaImportDone=true;
+    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return 0;
+    const seenFacts=new Set((r.liveFacts||[]).map(f=>safeText(f&&f.fp)).filter(Boolean));
+    let imported=0;
+    for(let i=0;i<storyCards.length;i++){
+      const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase(); if(!/character|npc|person|people|cast/.test(type))continue;
+      const entry=safeText(c.entry!=null?c.entry:c.value); if(entry.indexOf(EIDETIC_PROFILE_OPEN)<0)continue;
+      const key=characterKeyForStoryCard(c); if(!key)continue;
+      // A duplicate/archive card must never override the card the current-card selector chose.
+      if(findStoryCardForCharacter(key)!==i)continue;
+      const rows=managedProfileDeltaLines(entry);
+      for(let j=0;j<rows.length;j++){
+        const x=rows[j], owners=x.speaker?[PLAYER,key]:[PLAYER], cat=x.category||insightCategory(x.text,!!x.speaker);
+        if(x.speaker||x.status!=="FACT"){
+          const score=Math.max(5,importance(x.text)+(/^(?:STATUS|IDENTITY|RELATIONSHIP|ABILITY|CONFESSION|SECRET|PROMISE)$/.test(cat)?4:1));
+          if(insightNoise(x.text,cat,!!x.speaker,score))continue;
+          if(addCharacterInsight(key,x.text,cat,x.status==="FACT"?"CLAIM":x.status,owners,x.turn,"output","story-card-profile-import:"+i+":"+j,score,x.speaker?key:""))imported++;
+          continue;
+        }
+        if(!portableProfileFactSafe(x.text,key))continue;
+        const names=Array.from(new Set([key].concat(namesMentioned(x.text)||[])));
+        const fp=hash("FACT|"+cleanText(x.text).toLowerCase()); if(seenFacts.has(fp))continue;
+        const f={id:"lf"+(++r.seq),turn:x.turn,kind:"output",mode:"event",status:"FACT",text:displayText(x.text,EIDETIC_CONFIG.LIVE_FACT_CHARS),owners:[PLAYER],names,world:[],src:"story-card-profile-import:"+i+":"+j,fp,origin:"profile-import"};
+        f.facet=liveFactFacet(f); f.priority18=liveFactPriority(f);
+        if(!liveFactCardEligible(f))continue;
+        r.liveFacts.push(f); seenFacts.add(fp); imported++; r.stats.liveFacts=Number(r.stats.liveFacts||0)+1;
       }
     }
     if(r.liveFacts.length>EIDETIC_CONFIG.LIVE_FACT_LIMIT)r.liveFacts.splice(0,r.liveFacts.length-EIDETIC_CONFIG.LIVE_FACT_LIMIT);
-    if(imported){
-      r.stats.managedCardImports=Number(r.stats.managedCardImports||0)+imported;
-      r.stats.liveFacts=Number(r.stats.liveFacts||0)+imported;
-    }
-    // Any managed block present is ours and should be normalized by the Schema 16
-    // durability filter, including when cards were imported into a fresh Adventure.
-    if(foundManaged){r.runtime.needsSchema16CardCleanup=true;r.runtime.managedCardCleanupIndex=0;}
+    r.stats.profileDeltaImports=Number(r.stats.profileDeltaImports||0)+imported;
+    if(imported){r.runtime.liveSyncSig="";r.runtime.insightSyncSig="";r.runtime.recallCacheKey="";}
     return imported;
+  }
+
+  function importManagedInsightsFromStoryCards() {
+    // Retired Notes mirrors are cleanup-only in Schema 21. They are human-readable mirrors
+    // and older builds could contain gestures/logistics or stale-season material. Never use
+    // them to rebuild authoritative memory. PROFILE DELTA is the portable structured path.
+    const r=root(); if(!r||!r.runtime||r.runtime.managedInsightImportDone)return 0;
+    r.runtime.managedInsightImportDone=true;
+    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return 0;
+    let found=0;
+    for(let i=0;i<storyCards.length;i++){
+      const c=storyCards[i]||{}, notes=safeText(c.description||c.notes);
+      if(notes.indexOf(EIDETIC_INSIGHT_NOTES_OPEN)>=0)found++;
+    }
+    if(found){r.runtime.needsSchema20CardCleanup=true;r.runtime.schema20CleanupIndex=0;r.stats.legacyManagedQuarantined=Number(r.stats.legacyManagedQuarantined||0)+found;}
+    return 0;
+  }
+
+  function rescanSchema20RecentContinuity(limit) {
+    const r=root(); if(!r||!r.runtime||r.runtime.schema20RescanDone)return 0;
+    if(typeof history==="undefined"||!Array.isArray(history)||!history.length){r.runtime.schema20RescanDone=true;return 0;}
+    const oldOrigin=INGEST_ORIGIN, oldOverride=TURN_OVERRIDE; INGEST_ORIGIN="schema20-rescan";
+    const start=Math.max(0,history.length-Math.max(24,Number(limit)||160)), now=currentTurn();
+    let factsBefore=(r.liveFacts||[]).length, insightsBefore=(r.insights||[]).length;
+    try{
+      for(let hi=start;hi<history.length;hi++){
+        const h=history[hi]||{}, raw=cleanText(h.text||h.rawText||""); if(!raw)continue;
+        const kind=/^(?:continue|output|ai)$/i.test(safeText(h.type))?"output":"input";
+        // History often contains alternating player/model actions. Approximate turn numbers
+        // preserve recency ordering without rewriting the episodic archive.
+        const back=Math.floor((history.length-1-hi)/2); TURN_OVERRIDE=Math.max(0,now-back);
+        discover(raw); const src=hash("schema20-rescan|"+kind+"|"+raw);
+        captureImportantDialogue(raw,kind,currentTurn(),src);
+        const chunks=chunkText(raw);
+        for(let ci=0;ci<chunks.length;ci++){
+          const c=chunks[ci], owners=ownerSetFor(c,kind), mode=epistemicMode(c,kind), imp=mode==="question"?1:importance(c);
+          addLiveFact(c,owners,currentTurn(),kind,mode,imp,src+":"+ci);
+          captureCharacterReveals(c,owners,currentTurn(),kind,mode,imp,src+":"+ci);
+        }
+      }
+    } finally {INGEST_ORIGIN=oldOrigin;TURN_OVERRIDE=oldOverride;}
+    r.runtime.schema20RescanDone=true;
+    const df=Math.max(0,(r.liveFacts||[]).length-factsBefore), di=Math.max(0,(r.insights||[]).length-insightsBefore);
+    r.stats.schema20RescanFacts=Number(r.stats.schema20RescanFacts||0)+df; r.stats.schema20RescanInsights=Number(r.stats.schema20RescanInsights||0)+di;
+    if(df||di){
+      r.runtime.liveSyncSig="";r.runtime.insightSyncSig="";r.runtime.recallCacheKey="";
+      syncLiveStoryCards(true); backfillCharacterInsightNotes(12); backfillCharacterProfileDeltas(12);
+    }
+    return df+di;
+  }
+
+  function importManagedContinuityFromStoryCards() {
+    // Schema 21 quarantine: legacy LIVE CONTINUITY/dashboard blocks are old UI mirrors.
+    // They are deliberately NOT re-imported because a Story Card export can carry them
+    // across seasons and resurrect obsolete dialogue as current canon.
+    const r=root(); if(!r||!r.runtime||r.runtime.managedCardImportDone)return 0;
+    r.runtime.managedCardImportDone=true;
+    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return 0;
+    let foundManaged=0;
+    for(let i=0;i<storyCards.length;i++){
+      const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase(), entry=safeText(c.entry!=null?c.entry:c.value);
+      if(/character|npc|person|people|cast/.test(type)&&entry.indexOf(EIDETIC_ENTRY_OPEN)>=0)foundManaged++;
+      if(entry.indexOf(EIDETIC_CURRENT_OPEN)>=0)foundManaged++;
+    }
+    if(foundManaged){
+      r.runtime.needsSchema16CardCleanup=true;r.runtime.managedCardCleanupIndex=0;
+      r.runtime.needsSchema18CardCleanup=true;r.runtime.liveDashboardRemoved=false;
+      r.stats.legacyManagedQuarantined=Number(r.stats.legacyManagedQuarantined||0)+foundManaged;
+    }
+    r.runtime.legacyManagedQuarantineDone=true;
+    return 0;
   }
 
   function cleanupLegacyManagedCharacterCards(batch) {
@@ -19943,6 +20149,37 @@ const EIDETIC = (() => {
       r.runtime.needsSchema16CardCleanup=false;
       r.runtime.managedCardCleanupIndex=0;
     }
+  }
+
+  function cleanupSchema20CharacterCardClutter(batch) {
+    const r=root(); if(!r||!r.runtime||!r.runtime.needsSchema20CardCleanup)return false;
+    if(typeof storyCards==="undefined"||!Array.isArray(storyCards))return false;
+    if(!cardSyncAllowed(false))return false;
+    let i=Math.max(0,Number(r.runtime.schema20CleanupIndex)||0), handled=0, changed=false;
+    const max=Math.max(1,Math.min(10,Number(batch)||5));
+    for(;i<storyCards.length&&handled<max;i++){
+      const c=storyCards[i]||{}, type=safeText(c.type).toLowerCase(); if(!/character|npc|person|people|cast/.test(type))continue;
+      let original=safeText(c.entry!=null?c.entry:c.value), next=original;
+      if(next.indexOf(EIDETIC_ENTRY_OPEN)>=0)next=stripManagedEntryBlock(next,EIDETIC_ENTRY_OPEN,EIDETIC_ENTRY_CLOSE);
+      // Keep Schema 20 profile deltas intact. They are already compact, AI-visible managed
+      // continuity and may be the only portable continuity carried in an exported Story Card.
+      // writeCharacterProfileDelta() replaces this block safely when newer played canon exists.
+      handled++;
+      if(next!==original){persistStoryCard(i,safeText(c.keys),next,safeText(c.type)||"Character");changed=true;r.stats.schema20CardCleanups=Number(r.stats.schema20CardCleanups||0)+1;}
+      // Remove old noisy Notes block; a clean selective mirror will be recreated only for
+      // the best active card selected for each character.
+      const notes=safeText(c.description||c.notes);
+      if(notes.indexOf(EIDETIC_INSIGHT_NOTES_OPEN)>=0){
+        const clean=stripInsightNotes(notes); tryWriteCharacterInsightNotes(c,clean); changed=true;
+      }
+    }
+    r.runtime.schema20CleanupIndex=i;
+    if(i>=storyCards.length){
+      r.runtime.needsSchema20CardCleanup=false;r.runtime.schema20CleanupIndex=0;r.runtime.insightSyncSig="";r.runtime.profileDeltaSig="";
+      backfillCharacterInsightNotes(12);
+      backfillCharacterProfileDeltas(12);
+    }
+    return changed;
   }
 
   function cleanupSchema18StoryCardClutter() {
@@ -20040,8 +20277,25 @@ const EIDETIC = (() => {
     for(let i=Math.max(0,ins.length-18);i<ins.length;i++){
       const x=ins[i]||{}; if(Number(x.turn||0)<t-3)continue; if(x.subject)touched.add(x.subject);
     }
-    touched.forEach(k=>{if(EIDETIC_CONFIG.SYNC_STORY_CARD_ENTRIES)writeCharacterLiveNotes(k);writeCharacterInsightNotes(k);});
+    touched.forEach(k=>{if(EIDETIC_CONFIG.SYNC_STORY_CARD_ENTRIES)writeCharacterLiveNotes(k);writeCharacterInsightNotes(k);writeCharacterProfileDelta(k);});
     r.runtime.liveSyncTurn=t; r.runtime.liveSyncSig=sig; r.runtime.insightSyncSig=sig;
+  }
+
+  function storyCardCharacterSeedPriority(card, index) {
+    if(!card)return-999;
+    const type=safeText(card.type).toLowerCase(); if(!/character|npc|person|people|cast/.test(type))return-999;
+    const entry=stableStoryCardEntry(card), meta=safeText(card.title)+"\n"+safeText(card.description!=null?card.description:card.notes)+"\n"+entry;
+    let score=0;
+    if(card.isPinned)score+=100;
+    if(/\b(?:current player profile|current injury|current status|current played|current:|active ethical conflict|homecoming|series regular|active story)\b/i.test(meta))score+=35;
+    if(/\b(?:archive detail|historical reference|triggers disabled|archive profile|historical .* character|old episode|older season)\b/i.test(meta))score-=80;
+    if(/\b(?:future v\d+ payoff|future direction|author plan|writer[- ]room)\b/i.test(meta))score-=55;
+    if(/^name\s*:/i.test(entry))score+=8;
+    if(safeText(card.keys).trim())score+=4;
+    // A tiny recency tiebreaker makes later imported active profiles beat an earlier duplicate
+    // without letting array order overpower explicit current/archive metadata.
+    score+=Math.min(4,Math.max(0,Number(index)||0)/10000);
+    return score;
   }
 
   function seedFromStoryCards() {
@@ -20062,8 +20316,14 @@ const EIDETIC = (() => {
     }
     const sig = hash(sigParts.join("\u001e"));
     if (r && r.runtime && r.runtime.storyCardSig === sig) return false;
-    for (let i = 0; i < storyCards.length; i++) {
-      const c = storyCards[i] || {};
+    const seedOrder=[];
+    for(let si=0;si<storyCards.length;si++){
+      const sc=storyCards[si]||{}, st=safeText(sc.type).toLowerCase();
+      if(/character|npc|person|people|cast/.test(st))seedOrder.push({i:si,score:storyCardCharacterSeedPriority(sc,si)});
+    }
+    seedOrder.sort((a,b)=>b.score-a.score||b.i-a.i);
+    for (let oi = 0; oi < seedOrder.length; oi++) {
+      const i=seedOrder[oi].i, c = storyCards[i] || {};
       const type = safeText(c.type).toLowerCase();
       const entry = stableStoryCardEntry(c);
       const rawKeys = splitKeys(c.keys).map(x => safeText(x).trim()).filter(Boolean);
@@ -20099,24 +20359,18 @@ const EIDETIC = (() => {
     const type=safeText(card.type).toLowerCase();
     if(/character|npc|person|people|cast/.test(type))return-99;
     const title=safeText(card.title), desc=safeText(card.description!=null?card.description:card.notes), entry=stableStoryCardEntry(card);
-    const all=(title+"\n"+desc+"\n"+entry), low=all.toLowerCase();
-    if(!entry||splitKeys(card.keys).indexOf(EIDETIC_CONFIG.CONFIG_CARD_KEY)>=0||safeText(title).indexOf("EIDETIC")>=0)return-99;
-    let score=0;
-    const negativeCurrent=/\b(?:not current state|not the current state|current live state belongs\b|current state belongs\b|archive only|superseded by)\b/i.test(all);
-    const strong=!negativeCurrent&&/\b(?:current live state|current played state|current state|moving state|live state)\b/i.test(all);
-    if(strong)score+=14;
-    if(negativeCurrent)score-=30;
-    if(/\bcurrently\b|\bnow\b|\ben route\b|\bcurrent destination\b|\bcurrent threat\b|\bstatus:\s*(?:active|destroyed|missing|dead|alive|en route|offline|online)\b/i.test(all))score+=4;
-    if(/\bplayed(?: canon| history)?\s*:/i.test(all))score+=4;
-    if(/\bmain event\b/i.test(title))score+=3;
-    if(/\bbroad played continuity\b/i.test(desc))score+=2;
-    if(/\bnewer (?:story|play|played|facts?) (?:overrides?|supersedes?)\b/i.test(all))score+=3;
-    if(/\bsuperseded\b/i.test(all))score-=30;
-    if(/\barchive(?: detail)?\b|\bhistorical reference\b|\btriggers disabled\b/i.test(all))score-=12;
-    if(/\bfuture (?:direction|possibility|flexible|plan|payoff)\b|\bauthor plan\b|\bwriter[- ]room\b/i.test(all))score-=22;
-    if(card.isSpoiler&&!strong)score-=5;
-    return score;
+    const all=(title+"\n"+desc+"\n"+entry+"\n"+safeText(card.keys));
+    if(!entry||splitKeys(card.keys).indexOf(EIDETIC_CONFIG.CONFIG_CARD_KEY)>=0||/EIDETIC/i.test(title))return-99;
+    // Schema 20: never guess which of hundreds of Story Cards represents "now". A card
+    // becomes a global baseline only through a deliberate EIDETIC marker. This prevents an
+    // old season card containing phrases such as "moving state" from contaminating a new era.
+    const explicit=splitKeys(card.keys).indexOf(EIDETIC_CONFIG.CURRENT_CARD_SEED_MARKER)>=0 || /\bEIDETIC CURRENT SEED\b/i.test(all);
+    if(EIDETIC_CONFIG.CURRENT_CARD_SEED_MODE==="explicit"&&!explicit)return-99;
+    if(!explicit)return-99;
+    if(/\b(?:archive detail|historical reference|triggers disabled|superseded|future direction|author plan|writer[- ]room)\b/i.test(all))return-30;
+    return 20;
   }
+
   function refreshCurrentCardSeeds() {
     const r=root(); if(!r||!r.runtime||typeof storyCards==="undefined"||!Array.isArray(storyCards))return false;
     const scanTurn=currentTurn(), count=storyCards.length, interval=Math.max(1,Number(EIDETIC_CONFIG.CURRENT_CARD_SEED_SCAN_INTERVAL)||6);
@@ -20137,8 +20391,8 @@ const EIDETIC = (() => {
       const c=storyCards[i]||{}, score=currentCardSeedScore(c); if(score<6)continue;
       const entry=stableStoryCardEntry(c); if(!entry)continue;
       const title=safeText(c.title)||safeText(c.keys)||("Story Card "+i);
-      const seedAll=title+"\n"+safeText(c.description)+"\n"+entry;
-      const strong=!/\b(?:not current state|not the current state|current live state belongs\b|current state belongs\b|archive only|superseded by)\b/i.test(seedAll)&&/\b(?:current live state|current played state|current state|moving state|live state)\b/i.test(seedAll);
+      const seedAll=title+"\n"+safeText(c.description)+"\n"+entry+"\n"+safeText(c.keys);
+      const strong=splitKeys(c.keys).indexOf(EIDETIC_CONFIG.CURRENT_CARD_SEED_MARKER)>=0||/\bEIDETIC CURRENT SEED\b/i.test(seedAll);
       seeds.push({id:safeText(c.id)||String(i),title,score,strong,text:displayText(entry,EIDETIC_CONFIG.CURRENT_CARD_SEED_CHARS),tokens:tokenList(title+" "+entry,24)});
     }
     seeds.sort((a,b)=>b.score-a.score||String(a.title).localeCompare(String(b.title)));
@@ -22703,15 +22957,19 @@ const EIDETIC = (() => {
     const storyCardsChanged=seedFromStoryCards();
     refreshCurrentCardSeeds();
     importManagedContinuityFromStoryCards();
+    importManagedInsightsFromStoryCards();
+    importPortableProfileDeltasFromStoryCards();
     cleanupSchema18StoryCardClutter();
     cleanupLegacyManagedCharacterCards(4);
+    cleanupSchema20CharacterCardClutter(10);
+    rescanSchema20RecentContinuity(160);
     const insightMigrated=migrateCharacterInsightsFromExistingMemory();
     seedWorldEntitiesFromStoryCards();
     if(insightMigrated)syncLiveStoryCards(true);
     // If a Character Story Card is added after the reveal happened, backfill its Notes
     // from the structured ledger. Also periodically retry the Notes mirror when a client
     // failed to persist direct description/notes mutation; the ledger remains authoritative.
-    if(storyCardsChanged)backfillCharacterInsightNotes(12);
+    if(storyCardsChanged){backfillCharacterInsightNotes(12);backfillCharacterProfileDeltas(12);}
     if(r.runtime&&r.runtime.characterNotesPersistence==="degraded"&&currentTurn()>=Number(r.runtime.characterNotesRetryTurn||0))backfillCharacterInsightNotes(3);
     const imported = bootstrapExistingHistory();
     announceActivation(imported);
@@ -22849,7 +23107,21 @@ const EIDETIC = (() => {
     retrieveNarrativeCharacterInsights: retrieveNarrativeCharacterInsights,
     characterInsightsForNotes: characterInsightsForNotes,
     writeCharacterInsightNotes: writeCharacterInsightNotes,
+    writeCharacterProfileDelta: writeCharacterProfileDelta,
+    characterProfileItems: characterProfileItems,
+    characterProfileFactAbout: characterProfileFactAbout,
+    findStoryCardForCharacter: findStoryCardForCharacter,
+    storyCardCharacterSeedPriority: storyCardCharacterSeedPriority,
+    currentCardSeedScore: currentCardSeedScore,
+    refreshCurrentCardSeeds: refreshCurrentCardSeeds,
+    relevantCurrentCardSeeds: relevantCurrentCardSeeds,
+    cleanupSchema20CharacterCardClutter: cleanupSchema20CharacterCardClutter,
+    importManagedInsightsFromStoryCards: importManagedInsightsFromStoryCards,
+    rescanSchema20RecentContinuity: rescanSchema20RecentContinuity,
+    insightCategory: insightCategory,
+    insightNoise: insightNoise,
     backfillCharacterInsightNotes: backfillCharacterInsightNotes,
+    backfillCharacterProfileDeltas: backfillCharacterProfileDeltas,
     persistStoryCard: persistStoryCard,
     stripCommandArtifactsFromContext: stripCommandArtifactsFromContext,
     cardSyncAllowed: cardSyncAllowed,

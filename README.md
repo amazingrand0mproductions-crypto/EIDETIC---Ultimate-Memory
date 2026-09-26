@@ -520,44 +520,67 @@ That can make a conversation from hundreds or thousands of actions ago affect wh
 
 ### **The story moves forward. The characters keep the past.**
 
-## Current Architecture — Schema 19
+## Current Architecture — Schema 21
 
-Schema 19 is designed to work both as a Scenario-owned script and in AI Dungeon's newer **added-script** environment without attempting to modify the Adventure's Plot Essentials. EIDETIC's archive lives in its own persistent `state.__EIDETIC` object. It does **not** use Plot Essentials, Author's Note, or `state.memory` as storage.
+Schema 21 keeps Schema 20's current-canon ranking and Schema 19's add-on-safe architecture, then closes a portability bug found against a real 651-card long-running Adventure export. EIDETIC's authoritative archive lives only in persistent `state.__EIDETIC`; it never uses Plot Essentials, Author's Note, or `state.memory` as storage.
 
-The only EIDETIC Story Card created automatically is **Config & Guide**. It is configuration/UI, not the memory database. If the client refuses Story Card creation, EIDETIC continues with internal defaults and `/config` reports the active settings.
+The only EIDETIC Story Card created automatically is **Config & Guide**. Its Entry stays deliberately short and contains settings only. The explanation for every option belongs in Notes. If a client refuses Config-card creation or Notes persistence, EIDETIC continues on safe internal defaults.
 
 ### Add-on-safe current memory
 
-- Significant played developments are stored internally in `state.__EIDETIC.liveFacts`, the current-state ledger, world memory and character insight ledger.
-- At generation time EIDETIC appends one bounded `[[EIDETIC_RECALL]]` block through the **Context hook** (`onModelContext`).
-- Schema 19 never writes `state.memory.context`, `state.memory.authorsNote`, or `state.memory.frontMemory`.
-- Old EIDETIC recall blocks left by pre-Schema-19 builds are stripped before the newest block is appended, so upgrades do not duplicate memory.
-- Current facts are ranked by durability, strategic importance, topical relevance and recency.
-- Questions, transient dialogue, poses and low-value scene texture are rejected from current-state recall.
-- Newer confirmed state supersedes stale state in facets such as mission course, location, relationship/status and major threat state.
+- Significant played developments are stored internally in `state.__EIDETIC.liveFacts`, the current-state ledger, world memory and Character Insight Ledger.
+- At generation time EIDETIC appends one bounded `[[EIDETIC_RECALL]]` block through the Context hook.
+- EIDETIC never writes `state.memory.context`, `state.memory.authorsNote`, `state.memory.frontMemory`, or Plot Essentials.
+- Output is pass-through by default (`outputSpacing = preserve`) so the script does not cosmetically rewrite normal AI prose on mobile.
+- Current facts are ranked by durability, strategic importance, topical relevance, recency and evidence status.
+- Newer verified status supersedes stale current state without deleting the historical event.
 - `FACT`, `CLAIM`, `BELIEF`, `INFERENCE`, `UNCONFIRMED` and `NEGATED` remain distinct.
+
+### Current-canon selection
+
+Schema 21 preserves Schema 20's three large-archive protections:
+
+1. **No stale season baseline guessing.** Non-character Story Cards become global current seeds only when explicitly marked with `%__EIDETIC_CURRENT_SEED_20__%` or `EIDETIC CURRENT SEED`. Old season checkpoints cannot silently become the current story.
+2. **Duplicate Character Card ranking.** Exact/current/pinned cards outrank archive, historical and superseded duplicates.
+3. **Archive-resistant character discovery.** Current-relevance Story Cards are seeded before archive clutter and the tracked-character ceiling is large enough for long multi-season Adventures.
+
+### Character continuity: ledger + Notes mirror + Profile Delta
+
+Major character revelations use the structured **Character Insight Ledger**. Important identity/status/relationship/ability changes, confessions, strong commitments, durable goals/boundaries and other lasting revelations can be retained. Gestures, repeated reassurance, ordinary scene blocking and incidental logistics are filtered out.
+
+When Story Card metadata is writable, EIDETIC keeps a compact human-readable **Notes mirror** on the best current Character card. Notes are convenience/UI, not the database.
+
+For portable AI-visible continuity, EIDETIC can also maintain a tiny managed `[[EIDETIC PROFILE DELTA]]` block at the end of the best current Character **Entry**. It contains only a few high-value played-canon updates and is rewritten rather than endlessly appended. User-written profile text is preserved.
+
+### Schema 21 managed-continuity quarantine
+
+Older releases used `[[EIDETIC LIVE CONTINUITY]]`, `[[EIDETIC CURRENT PLAYED CONTINUITY]]`, and early `[[EIDETIC IMPORTANT CHARACTER CONTINUITY]]` blocks as mirrors. Exporting Story Cards could carry those mirrors into a later season. Re-importing them could therefore resurrect stale dialogue, old mission state, or an old evidence classification as if it were current canon.
+
+Schema 21 changes the contract:
+
+- retired LIVE CONTINUITY/dashboard blocks are **cleanup-only** and are never re-imported into authoritative memory;
+- old IMPORTANT CHARACTER CONTINUITY Notes mirrors are also cleanup-only;
+- existing Schema 20 state purges facts/insights whose source was one of those retired mirror-import paths;
+- current history is re-scanned in a bounded window after the purge;
+- only the newer, bounded `[[EIDETIC PROFILE DELTA]]` is a portable managed Character-card memory surface;
+- a Profile Delta is imported only from the Character card that the current-card ranker selects, so an archive duplicate cannot override the live profile;
+- `SAID/CLAIM` remains a claim, and bare quotation fragments are never promoted to objective `FACT`.
+
+This is specifically designed to keep a long universe with many old seasons usable without letting a previous season's managed mirror contaminate the present one.
+
+### Automatic upgrade / migration
+
+A long-running Adventure does not need to restart. On first Schema 21 load EIDETIC preserves its internal archive, removes retired mirror-import contamination, cleans old managed card clutter in bounded batches, imports safe Profile Deltas, re-scans recent played history, and rebuilds compact current Character mirrors. Retry/Undo and evidence-state protections remain active.
 
 ### Long-Adventure timeout protection
 
-When EIDETIC is attached to an existing Adventure, it no longer tries to import the entire exposed history in one hook. Existing history is imported in small batches (24 actions by default) across successive hooks. This dramatically reduces the first-turn timeout spike while still converging on the same archive. New play is remembered immediately while background import continues.
-
-### Scenario current-state bridge
-
-EIDETIC can read a Scenario's own strongly marked moving-state Story Card internally even if that card has no triggers. Cards marked `MOVING STATE`, `CURRENT STATE` or equivalent can provide a compact baseline; cards marked `ARCHIVE`, `SUPERSEDED`, `FUTURE` or `AUTHOR PLAN` are demoted or rejected. EIDETIC never rewrites or duplicates those Scenario cards. Newer live play always wins.
-
-### Character continuity
-
-Major character revelations use the **Character Insight Ledger**. When the client preserves Story Card Notes metadata, EIDETIC mirrors a bounded human-readable block into that character's Notes. It does not append generic live-continuity blocks to Character **Entry**, so recurring cards do not grow with scene-by-scene clutter. The internal ledger remains authoritative if Notes cannot be persisted.
+When EIDETIC is attached to an existing Adventure, exposed history is imported in small batches (24 actions by default) across successive hooks. New play is remembered immediately while bootstrap continues. Story Card cleanup/migration is similarly batched.
 
 ### Story Card failure safety
 
-Story Cards are optional integration surfaces, not the archive. Config-card creation and Character-Notes mirroring use the Story Card API when available and back off if persistence fails. A mobile/client Story Card problem therefore does not disable EIDETIC memory. Running `/config` manually also forces a safe Config-card retry, useful after moving an Adventure from a client where card creation failed to desktop/PC.
+Story Cards are integration surfaces, not the archive. Config creation, human Notes mirroring and Character Profile Deltas back off safely when the client/API refuses a write. A Story Card problem therefore does not disable EIDETIC's internal memory/retrieval engine.
 
-### Upgrade cleanup
-
-When upgrading from an older schema, EIDETIC imports durable facts from its retired `Current Played Continuity` dashboard and old `[[EIDETIC LIVE CONTINUITY]]` Character Entry blocks, then removes/strips that generated clutter when the Story Card helper is available. The facts remain in internal memory.
-
-Use `/live` to inspect active durable facts, Character Insight counts, Notes mirrors, cached Scenario-current baselines and recall injections. Use `/config` to inspect settings or retry Config-card creation.
+Use `/live` to inspect active durable facts and Character Insight counts. Use `/memstats` for storage/sync statistics, `/memdetect` for detector diagnostics, and `/config` to inspect active settings.
 
 ## Adaptive detection and blank new Adventures
 
@@ -581,7 +604,7 @@ creates a tiny `EIDETIC ACTIVE` recall block for the Context hook on that blank 
 
 
 
-> **Historical changelog:** Schema 13–18 notes below describe older designs. **Schema 19 supersedes any historical references to Front Memory/state.memory writes, a generated Current Played Continuity dashboard, or generic Character Entry mirroring.**
+> **Historical changelog:** Schema 13–20 notes below describe older designs. **Schema 21 supersedes historical references to Front Memory/state.memory writes, guessed global current-state cards, a generated Current Played Continuity dashboard, first-match Character Card selection, generic per-turn Character Entry mirroring, or re-importing retired LIVE/IMPORTANT continuity mirrors as authoritative memory.**
 
 ## Schema 13 — Cross-scenario isolation and relevance
 
@@ -775,10 +798,7 @@ as `Dr. Nalini Choudhury` is not broken into malformed fragments.
 
 ### Export/update migration
 
-Older `[[EIDETIC LIVE CONTINUITY]]` and Current Played Continuity blocks are re-filtered
-when Schema 16 first runs. If Story Cards were exported/imported without `state.__EIDETIC`,
-EIDETIC can recover durable managed lines, reject transient ones and normalize the blocks
-instead of blindly preserving old noise.
+Historical Schema 16 behavior re-filtered and re-imported older `[[EIDETIC LIVE CONTINUITY]]` and Current Played Continuity blocks. **Schema 21 supersedes that behavior:** retired mirror blocks are now cleanup-only because cross-season Story Card exports proved that even filtered legacy mirrors can resurrect stale canon. Portable managed continuity now uses only the bounded Profile Delta path plus recent played history.
 
 These changes are generic; the test Scenarios used to expose failures are not encoded in
 the engine.
