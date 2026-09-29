@@ -125,7 +125,7 @@ const EIDETIC_CONFIG = {
 const EIDETIC = (() => {
   "use strict";
 
-  const SCHEMA_REVISION = 21;
+  const SCHEMA_REVISION = 22;
   const ROOT = "__EIDETIC";
   const OPEN = "[[EIDETIC_RECALL";
   const CLOSE = "[[/EIDETIC_RECALL]]";
@@ -18273,7 +18273,7 @@ const EIDETIC = (() => {
       }
     }
     if (previousSchema > 0 && previousSchema < 21) {
-      // Schema 21 quarantines retired Story Card mirrors. Schema 16/18 LIVE CONTINUITY
+      // Schema 22 retains the Schema 21 quarantine for retired Story Card mirrors. Schema 16/18 LIVE CONTINUITY
       // and early IMPORTANT CHARACTER CONTINUITY blocks were display mirrors, not a
       // trustworthy portable database. Importing them back into a fresh/current story can
       // resurrect stale seasons or old misclassifications. Portable continuity now comes
@@ -19075,7 +19075,8 @@ const EIDETIC = (() => {
       "Scenario baselines are NOT guessed from arbitrary Story Cards. To opt a non-character card into global EIDETIC baseline recall, add trigger %__EIDETIC_CURRENT_SEED_20__% or the phrase EIDETIC CURRENT SEED.",
       "",
       "COMMANDS: /eidetic /memory /config /memstats /memdetect /roster /focus Alice /focus auto /remember Alice | fact /recall Alice | topic /live /memdebug on|off /memclear CONFIRM",
-      "Mobile/add-on safety: commands use the soft path; Config-card failure does not disable memory. Invalid values fall back safely."
+      "Mobile/add-on safety: commands use the soft path; Config-card failure does not disable memory. Invalid values fall back safely.",
+      "Optimized Context: fully supported. EIDETIC preserves AI Dungeon's supplied cached prompt byte-for-byte and appends recall only at the end; if no safe suffix space remains, recall is skipped for that turn rather than trimming/reordering cached context."
     ].join("\n");
   }
 
@@ -20052,7 +20053,7 @@ const EIDETIC = (() => {
   }
 
   function importManagedInsightsFromStoryCards() {
-    // Retired Notes mirrors are cleanup-only in Schema 21. They are human-readable mirrors
+    // Retired Notes mirrors are cleanup-only in Schema 22 (continued from Schema 21). They are human-readable mirrors
     // and older builds could contain gestures/logistics or stale-season material. Never use
     // them to rebuild authoritative memory. PROFILE DELTA is the portable structured path.
     const r=root(); if(!r||!r.runtime||r.runtime.managedInsightImportDone)return 0;
@@ -20101,7 +20102,7 @@ const EIDETIC = (() => {
   }
 
   function importManagedContinuityFromStoryCards() {
-    // Schema 21 quarantine: legacy LIVE CONTINUITY/dashboard blocks are old UI mirrors.
+    // Schema 22 quarantine: legacy LIVE CONTINUITY/dashboard blocks are old UI mirrors.
     // They are deliberately NOT re-imported because a Story Card export can carry them
     // across seasons and resurrect obsolete dialogue as current canon.
     const r=root(); if(!r||!r.runtime||r.runtime.managedCardImportDone)return 0;
@@ -22600,56 +22601,84 @@ const EIDETIC = (() => {
     return marker.test(safeText(text));
   }
 
-  function appendRecallToContext(text, block) {
-    let base=removeOurFrontMemory(stripCommandArtifactsFromContext(text));
+  // Schema 22 Optimized Context contract:
+  // AI Dungeon's cache-compatible Context modifier must preserve the complete supplied
+  // prompt as an unchanged prefix. Dynamic EIDETIC material may only be appended.
+  // Never trim, delete, reorder, scrub, or replace any byte from `text` here.
+  function compactRecallForAppendRoom(block, room) {
     block=safeText(block).trim();
-    if(!block)return base;
+    room=Math.max(0,Number(room||0));
+    if(!block||room<96)return "";
+    if(block.length<=room)return block;
 
-    let maxChars=(typeof info!=="undefined"&&info&&Number.isFinite(info.maxChars))?Math.max(0,Number(info.maxChars)):0;
-    if(!maxChars)return base+(base.endsWith("\n")?"":"\n")+block;
+    const parts=block.split("\n");
+    const close=(parts.length&&parts[parts.length-1].trim()===CLOSE)?CLOSE:"";
+    const head=parts.length?parts[0]:"";
+    if(!head)return "";
+    const required=head.length+(close?(1+close.length):0);
+    if(required>room)return "";
 
-    const sep=base?"\n":"";
-    if(base.length+sep.length+block.length<=maxChars)return base+sep+block;
-
-    const memoryLength=(typeof info!=="undefined"&&info&&Number.isFinite(info.memoryLength))
-      ?Math.max(0,Math.min(base.length,Number(info.memoryLength))):0;
-    const prefix=memoryLength?base.slice(0,memoryLength):"";
-    const dynamic=memoryLength?base.slice(memoryLength):base;
-    const delimiter=(prefix&&dynamic)?"\n":"";
-    const blockSep=(prefix||dynamic)?"\n":"";
-    const fixed=prefix.length+delimiter.length+blockSep.length+block.length;
-    let room=Math.max(0,maxChars-fixed);
-
-    if(room<256&&block.length>420){
-      const target=Math.max(280,Math.min(block.length,Math.floor(maxChars*0.045)));
-      const tail="\n"+CLOSE;
-      const parts=block.split("\n");
-      const head=parts.slice(0,2).join("\n");
-      const bodyLines=parts.slice(2,-1);
-      let compact=head;
-      for(let i=0;i<bodyLines.length;i++){
-        const candidate=compact+"\n"+bodyLines[i]+tail;
-        if(candidate.length<=target)compact+="\n"+bodyLines[i];
-        else{
-          const left=Math.max(0,target-compact.length-tail.length-2);
-          if(left>=80)compact+="\n"+displayText(bodyLines[i],left);
-          break;
-        }
+    let out=head;
+    const end=close?parts.length-1:parts.length;
+    for(let i=1;i<end;i++){
+      const line=safeText(parts[i]);
+      if(!line)continue;
+      const reserve=close?(1+close.length):0;
+      const full="\n"+line;
+      if(out.length+full.length+reserve<=room){out+=full;continue;}
+      const left=room-out.length-reserve-1;
+      if(left>=48){
+        const clipped=displayText(line,left);
+        if(clipped)out+="\n"+clipped;
       }
-      block=compact+tail;
-      room=Math.max(0,maxChars-(prefix.length+delimiter.length+blockSep.length+block.length));
+      break;
+    }
+    if(close)out+="\n"+close;
+    return out.length<=room?out:"";
+  }
+
+  function appendRecallToContext(text, block) {
+    const base=safeText(text);
+    block=safeText(block).trim();
+    if(!block||currentRecallAlreadyInText(base,block))return base;
+
+    const sep=base&& !base.endsWith("\n")?"\n":"";
+    let maxChars=(typeof info!=="undefined"&&info&&Number.isFinite(info.maxChars))?Math.max(0,Number(info.maxChars)):0;
+    let suffix=block;
+
+    if(maxChars){
+      const room=Math.max(0,maxChars-base.length-sep.length);
+      suffix=compactRecallForAppendRoom(block,room);
+      if(!suffix){
+        const r=root();
+        if(r&&r.stats)r.stats.contextRecallSkippedNoRoom=Number(r.stats.contextRecallSkippedNoRoom||0)+1;
+        return base;
+      }
     }
 
-    const kept=room>0?dynamic.slice(-room):"";
-    const pieces=[];
-    if(prefix)pieces.push(prefix);
-    if(kept)pieces.push(kept);
-    let out=pieces.join(pieces.length>1?"\n":"");
-    if(out&&block)out+="\n";
-    out+=block;
-    if(out.length>maxChars)out=out.slice(-maxChars);
-    const r=root(); if(r&&r.stats)r.stats.contextRecallAppends=Number(r.stats.contextRecallAppends||0)+1;
+    const out=base+sep+suffix;
+    // Hard invariant for // @cache-compatible: original context MUST remain the exact prefix.
+    if(out.slice(0,base.length)!==base)return base;
+    const r=root();
+    if(r&&r.stats){
+      r.stats.contextRecallAppends=Number(r.stats.contextRecallAppends||0)+1;
+      r.stats.cacheCompatibleAppends=Number(r.stats.cacheCompatibleAppends||0)+1;
+    }
     return out;
+  }
+
+  function appendUtilityCommandToContext(text) {
+    const base=safeText(text);
+    const instruction=utilityCommandContext();
+    if(!instruction)return base;
+    const sep=base&&!base.endsWith("\n")?"\n":"";
+    let maxChars=(typeof info!=="undefined"&&info&&Number.isFinite(info.maxChars))?Math.max(0,Number(info.maxChars)):0;
+    if(maxChars&&base.length+sep.length+instruction.length>maxChars){
+      const r=root(); if(r&&r.stats)r.stats.commandContextNoRoom=Number(r.stats.commandContextNoRoom||0)+1;
+      return base;
+    }
+    const out=base+sep+instruction;
+    return out.slice(0,base.length)===base?out:base;
   }
 
   function scrubLeak(text) {
@@ -22982,7 +23011,7 @@ const EIDETIC = (() => {
     init();
     if (!EIDETIC_CONFIG.ENABLED) {
       clearFrontMemory();
-      if (hook === "context" || hook === "contextAppend") return { text: removeOurFrontMemory(stripCommandArtifactsFromContext(text)), stop: false };
+      // Cache-compatible Context must be an exact pass-through while disabled.
       return { text: text, stop: false };
     }
     const r = root();
@@ -23009,10 +23038,14 @@ const EIDETIC = (() => {
       // The command costs a tiny utility generation which Output intercepts.
       if (r.runtime.pendingCommand) {
         clearFrontMemory();
-        return { text: utilityCommandContext(), stop: false };
+        // Do not replace the prompt: Optimized Context only accepts an unchanged prefix
+        // plus an appended suffix from // @cache-compatible Context scripts.
+        return { text: appendUtilityCommandToContext(text), stop: false };
       }
 
-      let contextText = removeOurFrontMemory(stripCommandArtifactsFromContext(text));
+      // IMPORTANT: keep the platform-supplied prompt byte-for-byte intact. Old cleanup
+      // helpers remain for non-context data migration only; they must not touch Context.
+      const contextText = safeText(text);
       let block = currentFrontRecallBlock();
       if (!block) block = buildRecall("");
       if (!block) {

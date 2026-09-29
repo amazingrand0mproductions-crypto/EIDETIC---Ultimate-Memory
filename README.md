@@ -520,9 +520,9 @@ That can make a conversation from hundreds or thousands of actions ago affect wh
 
 ### **The story moves forward. The characters keep the past.**
 
-## Current Architecture — Schema 21
+## Current Architecture — Schema 22
 
-Schema 21 keeps Schema 20's current-canon ranking and Schema 19's add-on-safe architecture, then closes a portability bug found against a real 651-card long-running Adventure export. EIDETIC's authoritative archive lives only in persistent `state.__EIDETIC`; it never uses Plot Essentials, Author's Note, or `state.memory` as storage.
+Schema 22 keeps Schema 21's current-canon quarantine, Schema 20's current-card ranking and Schema 19's add-on-safe architecture, then hardens every Context path for AI Dungeon Optimized Context / cache-compatible execution. EIDETIC's authoritative archive lives only in persistent `state.__EIDETIC`; it never uses Plot Essentials, Author's Note, or `state.memory` as storage.
 
 The only EIDETIC Story Card created automatically is **Config & Guide**. Its Entry stays deliberately short and contains settings only. The explanation for every option belongs in Notes. If a client refuses Config-card creation or Notes persistence, EIDETIC continues on safe internal defaults.
 
@@ -538,7 +538,7 @@ The only EIDETIC Story Card created automatically is **Config & Guide**. Its Ent
 
 ### Current-canon selection
 
-Schema 21 preserves Schema 20's three large-archive protections:
+Schema 22 preserves Schema 20's three large-archive protections:
 
 1. **No stale season baseline guessing.** Non-character Story Cards become global current seeds only when explicitly marked with `%__EIDETIC_CURRENT_SEED_20__%` or `EIDETIC CURRENT SEED`. Old season checkpoints cannot silently become the current story.
 2. **Duplicate Character Card ranking.** Exact/current/pinned cards outrank archive, historical and superseded duplicates.
@@ -552,11 +552,11 @@ When Story Card metadata is writable, EIDETIC keeps a compact human-readable **N
 
 For portable AI-visible continuity, EIDETIC can also maintain a tiny managed `[[EIDETIC PROFILE DELTA]]` block at the end of the best current Character **Entry**. It contains only a few high-value played-canon updates and is rewritten rather than endlessly appended. User-written profile text is preserved.
 
-### Schema 21 managed-continuity quarantine
+### Managed-continuity quarantine (Schema 21+, retained in Schema 22)
 
 Older releases used `[[EIDETIC LIVE CONTINUITY]]`, `[[EIDETIC CURRENT PLAYED CONTINUITY]]`, and early `[[EIDETIC IMPORTANT CHARACTER CONTINUITY]]` blocks as mirrors. Exporting Story Cards could carry those mirrors into a later season. Re-importing them could therefore resurrect stale dialogue, old mission state, or an old evidence classification as if it were current canon.
 
-Schema 21 changes the contract:
+Schema 21 established the contract, and Schema 22 retains it:
 
 - retired LIVE CONTINUITY/dashboard blocks are **cleanup-only** and are never re-imported into authoritative memory;
 - old IMPORTANT CHARACTER CONTINUITY Notes mirrors are also cleanup-only;
@@ -570,7 +570,7 @@ This is specifically designed to keep a long universe with many old seasons usab
 
 ### Automatic upgrade / migration
 
-A long-running Adventure does not need to restart. On first Schema 21 load EIDETIC preserves its internal archive, removes retired mirror-import contamination, cleans old managed card clutter in bounded batches, imports safe Profile Deltas, re-scans recent played history, and rebuilds compact current Character mirrors. Retry/Undo and evidence-state protections remain active.
+A long-running Adventure does not need to restart. On first Schema 22 load EIDETIC preserves its internal archive, removes retired mirror-import contamination, cleans old managed card clutter in bounded batches, imports safe Profile Deltas, re-scans recent played history, and rebuilds compact current Character mirrors. Retry/Undo and evidence-state protections remain active.
 
 ### Long-Adventure timeout protection
 
@@ -604,7 +604,7 @@ creates a tiny `EIDETIC ACTIVE` recall block for the Context hook on that blank 
 
 
 
-> **Historical changelog:** Schema 13–20 notes below describe older designs. **Schema 21 supersedes historical references to Front Memory/state.memory writes, guessed global current-state cards, a generated Current Played Continuity dashboard, first-match Character Card selection, generic per-turn Character Entry mirroring, or re-importing retired LIVE/IMPORTANT continuity mirrors as authoritative memory.**
+> **Historical changelog:** Schema 13–20 notes below describe older designs. **Schema 22 supersedes historical references to Front Memory/state.memory writes, guessed global current-state cards, a generated Current Played Continuity dashboard, first-match Character Card selection, generic per-turn Character Entry mirroring, or re-importing retired LIVE/IMPORTANT continuity mirrors as authoritative memory.**
 
 ## Schema 13 — Cross-scenario isolation and relevance
 
@@ -726,7 +726,7 @@ model's maximum.
 Schema 15 reduces EIDETIC's contribution:
 
 - routine recall is compact and adaptive;
-- Front Memory is used once instead of duplicating recall into the Context modifier;
+- EIDETIC uses one bounded append-only Context recall suffix and does not duplicate it through `state.memory`;
 - routine recall reserves context headroom;
 - large Memory usage forces a smaller EIDETIC block;
 - only explicit recall questions receive a temporary larger budget when needed to return
@@ -746,12 +746,24 @@ Ordinary model output now defaults to `outputSpacing = preserve`, so EIDETIC ret
 byte-for-byte unless it has to remove an accidentally leaked EIDETIC control block.
 `outputSpacing = auto` remains an explicit opt-in cosmetic edit.
 
-### Cache-compatible Context
+### Optimized Context / cache-compatible Context — Schema 22
 
-The Context tab remains `// @cache-compatible`, but Schema 15 normally leaves the supplied
-context text unchanged and stores recall in `state.memory.frontMemory`. This avoids
-disturbing the stable prompt prefix while still putting EIDETIC recall at the end of the
-model context.
+EIDETIC is now **strictly append-only in `onModelContext`**. The first line of `Context.js`
+remains `// @cache-compatible`, and the returned Context always begins with AI Dungeon's
+entire supplied prompt **byte-for-byte unchanged**. EIDETIC recall is added only as a suffix.
+
+This is intentionally stricter than older builds. Schema 22 never trims, deletes, reorders,
+scrubs or replaces the platform-supplied Context in order to make room for recall. If the
+remaining `info.maxChars` budget cannot safely fit even a compact recall suffix, EIDETIC
+skips that suffix for the turn instead of damaging the cached prefix. Durable internal
+memory and Character Profile Delta continuity remain stored for later relevant turns.
+
+Slash commands follow the same rule: the normal Context is preserved and a tiny utility
+instruction is appended; Output intercepts the throwaway generation and returns the command
+result. Disabled EIDETIC is an exact Context pass-through.
+
+Schema 22 also keeps the Schema 19 add-on-safety rule: EIDETIC does **not** write
+`state.memory.context`, `state.memory.authorsNote` or `state.memory.frontMemory`.
 
 ### Mobile verification
 
@@ -759,6 +771,32 @@ The mobile/Phoenix harness tests every public slash command, both thrown and fal
 Story Card failures, normal Output pass-through, Front Memory recall under a constrained
 context budget, command-artifact cleanup, and successful Current Played Continuity writes.
 
+
+
+
+## Schema 22 — Optimized Context Hardening
+
+AI Dungeon added cache-compatible V1 Context scripts for cache-efficient / Optimized Context
+models in August 2026. Merely adding the annotation is not enough: a cache-compatible
+modifier has to preserve the prompt prefix and append its dynamic material at the end.
+
+Schema 22 hardens every EIDETIC Context path around that contract:
+
+- `// @cache-compatible` is the first line of `Context.js`;
+- ordinary recall preserves the complete supplied Context as an exact prefix;
+- tight-budget handling compacts or skips **only the EIDETIC suffix**;
+- slash commands append a utility instruction instead of replacing Context;
+- disabled mode is exact pass-through;
+- the Context wrapper rejects any accidental future non-append mutation;
+- old EIDETIC/meta text already supplied by AI Dungeon is not removed from Context, because
+  doing so would invalidate the cache-compatible prefix;
+- internal retrieval ignores command/meta artifacts without rewriting model Context;
+- Story Card/Profile Delta integration continues through the supported Story Card API;
+- no Plot Essentials / `state.memory` mutation is used.
+
+The dedicated `optimized_context_harness.js` validates normal recall, command handling,
+tight context, disabled mode and wrapper fail-safety. `optimized_context_endurance_harness.js`
+runs 500 turns / 1,500 hooks and asserts exact prefix preservation on every Context call.
 
 
 ## Schema 16 — Compact Config Notes + Durable Continuity
