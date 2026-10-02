@@ -1,5 +1,5 @@
 // @cache-compatible
-// EIDETIC Schema 22: strict append-only Context modifier for AI Dungeon Optimized Context.
+// EIDETIC Schema 23: strict append-only Context modifier for AI Dungeon Optimized Context.
 // The Library guarantees that the platform-supplied prompt remains an exact prefix.
 const modifier = (text) => {
   try {
